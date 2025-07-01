@@ -11,7 +11,7 @@ const EmployeeReports = () => {
   const { user } = useAuth();
   const [reportType, setReportType] = useState('attendance');
   const [dateRange, setDateRange] = useState('thisMonth');
-  const [reportData, setReportData] = useState({});
+  const [reportData, setReportData] = useState<any>({});
 
   useEffect(() => {
     generateReportData();
@@ -117,7 +117,7 @@ const EmployeeReports = () => {
       if (reportData.records && reportData.records.length > 0) {
         csvContent += `Recent Records\n`;
         csvContent += `Date,Status,Punch In,Punch Out\n`;
-        reportData.records.forEach(record => {
+        reportData.records.forEach((record: any) => {
           csvContent += `${new Date(record.date).toLocaleDateString()},${record.status},${record.punchIn || '-'},${record.punchOut || '-'}\n`;
         });
       }
@@ -132,7 +132,7 @@ const EmployeeReports = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const formatCurrency = (amount) => {
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR'
@@ -240,7 +240,7 @@ const EmployeeReports = () => {
                   <div>
                     <h3 className="text-lg font-semibold mb-4">Recent Attendance Records</h3>
                     <div className="space-y-2">
-                      {reportData.records.map((record, index) => (
+                      {reportData.records.map((record: any, index: number) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div>
                             <p className="font-medium">{new Date(record.date).toLocaleDateString()}</p>
