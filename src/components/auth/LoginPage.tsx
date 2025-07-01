@@ -5,14 +5,15 @@ import { motion } from 'framer-motion';
 import { Users, UserCheck, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { useToast } from '../../hooks/use-toast';
 import RegisterForm from './RegisterForm';
+import AdminRegisterForm from './AdminRegisterForm';
 
 const LoginPage = () => {
   const [activeTab, setActiveTab] = useState<'admin' | 'employee'>('admin');
   const [showRegister, setShowRegister] = useState(false);
+  const [showAdminRegister, setShowAdminRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -51,6 +52,10 @@ const LoginPage = () => {
 
   if (showRegister) {
     return <RegisterForm onBack={() => setShowRegister(false)} />;
+  }
+
+  if (showAdminRegister) {
+    return <AdminRegisterForm onBack={() => setShowAdminRegister(false)} />;
   }
 
   return (
@@ -157,6 +162,14 @@ const LoginPage = () => {
                     Login as Admin
                   </Button>
                 )}
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => setShowAdminRegister(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    New Admin? Register here
+                  </button>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
