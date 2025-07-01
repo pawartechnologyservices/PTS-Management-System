@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plane, Check, X, Clock, Filter } from 'lucide-react';
@@ -69,10 +68,10 @@ const LeaveManagement = () => {
     }
   };
 
-  const calculateDays = (startDate, endDate) => {
+  const calculateDays = (startDate: string, endDate: string) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     return diffDays;
   };

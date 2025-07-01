@@ -12,7 +12,7 @@ const ReportsManagement = () => {
   const [dateRange, setDateRange] = useState('thisMonth');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [reportData, setReportData] = useState({});
+  const [reportData, setReportData] = useState<any>({});
 
   useEffect(() => {
     generateReportData();
@@ -25,14 +25,14 @@ const ReportsManagement = () => {
     const salarySlips = JSON.parse(localStorage.getItem('salary_slips') || '[]');
     const projects = JSON.parse(localStorage.getItem('projects') || '[]');
 
-    let data = {};
+    let data: any = {};
 
     switch (reportType) {
       case 'attendance':
         data = {
-          totalEmployees: employees.filter(emp => emp.role === 'employee').length,
-          totalPresentDays: attendance.filter(record => record.status === 'present').length,
-          totalAbsentDays: attendance.filter(record => record.status === 'absent').length,
+          totalEmployees: employees.filter((emp: any) => emp.role === 'employee').length,
+          totalPresentDays: attendance.filter((record: any) => record.status === 'present').length,
+          totalAbsentDays: attendance.filter((record: any) => record.status === 'absent').length,
           averageAttendance: '85%',
           departmentWise: getDepartmentWiseAttendance(attendance, employees)
         };
@@ -41,9 +41,9 @@ const ReportsManagement = () => {
       case 'leaves':
         data = {
           totalRequests: leaves.length,
-          approved: leaves.filter(leave => leave.status === 'approved').length,
-          pending: leaves.filter(leave => leave.status === 'pending').length,
-          rejected: leaves.filter(leave => leave.status === 'rejected').length,
+          approved: leaves.filter((leave: any) => leave.status === 'approved').length,
+          pending: leaves.filter((leave: any) => leave.status === 'pending').length,
+          rejected: leaves.filter((leave: any) => leave.status === 'rejected').length,
           departmentWise: getDepartmentWiseLeaves(leaves, employees)
         };
         break;
@@ -51,8 +51,8 @@ const ReportsManagement = () => {
       case 'salary':
         data = {
           totalSlipsGenerated: salarySlips.length,
-          totalAmount: salarySlips.reduce((sum, slip) => sum + slip.netSalary, 0),
-          averageSalary: salarySlips.length > 0 ? salarySlips.reduce((sum, slip) => sum + slip.netSalary, 0) / salarySlips.length : 0,
+          totalAmount: salarySlips.reduce((sum: number, slip: any) => sum + slip.netSalary, 0),
+          averageSalary: salarySlips.length > 0 ? salarySlips.reduce((sum: number, slip: any) => sum + slip.netSalary, 0) / salarySlips.length : 0,
           departmentWise: getDepartmentWiseSalary(salarySlips, employees)
         };
         break;
@@ -60,9 +60,9 @@ const ReportsManagement = () => {
       case 'projects':
         data = {
           totalProjects: projects.length,
-          completed: projects.filter(project => project.status === 'completed').length,
-          inProgress: projects.filter(project => project.status === 'in_progress').length,
-          notStarted: projects.filter(project => project.status === 'not_started').length,
+          completed: projects.filter((project: any) => project.status === 'completed').length,
+          inProgress: projects.filter((project: any) => project.status === 'in_progress').length,
+          notStarted: projects.filter((project: any) => project.status === 'not_started').length,
           departmentWise: getDepartmentWiseProjects(projects)
         };
         break;

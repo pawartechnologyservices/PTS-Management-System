@@ -17,18 +17,18 @@ const EmployeeMeetings = () => {
     const allMeetings = JSON.parse(localStorage.getItem('meetings') || '[]');
     
     // Filter meetings relevant to the employee
-    const relevantMeetings = allMeetings.filter(meeting => 
+    const relevantMeetings = allMeetings.filter((meeting: any) => 
       meeting.type === 'common' || 
       (meeting.type === 'department' && meeting.department === user?.department)
     );
     
     const now = new Date();
-    const upcoming = [];
-    const past = [];
+    const upcoming: any[] = [];
+    const past: any[] = [];
     
-    relevantMeetings.forEach(meeting => {
+    relevantMeetings.forEach((meeting: any) => {
       const meetingDateTime = new Date(`${meeting.date}T${meeting.time}`);
-      if (meetingDateTime > now) {
+      if (meetingDateTime.getTime() > now.getTime()) {
         upcoming.push(meeting);
       } else {
         past.push(meeting);
@@ -36,8 +36,8 @@ const EmployeeMeetings = () => {
     });
     
     // Sort by date/time
-    upcoming.sort((a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`));
-    past.sort((a, b) => new Date(`${b.date}T${b.time}`) - new Date(`${a.date}T${a.time}`));
+    upcoming.sort((a: any, b: any) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime());
+    past.sort((a: any, b: any) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime());
     
     setMeetings(relevantMeetings);
     setUpcomingMeetings(upcoming);

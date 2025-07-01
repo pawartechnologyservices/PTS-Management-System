@@ -10,6 +10,14 @@ interface User {
   designation: string;
   employeeId: string;
   isActive: boolean;
+  phone?: string;
+  address?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+  joinDate?: string;
+  workMode?: string;
+  reportingManager?: string;
+  updatedAt?: string;
 }
 
 interface AuthContextType {

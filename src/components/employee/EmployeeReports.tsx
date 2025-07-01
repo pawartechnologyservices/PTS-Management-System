@@ -26,20 +26,20 @@ const EmployeeReports = () => {
     const projects = JSON.parse(localStorage.getItem('projects') || '[]');
 
     // Filter data for current user
-    const userAttendance = attendance.filter(record => record.employeeId === user.id);
-    const userLeaves = leaves.filter(leave => leave.employeeId === user.employeeId);
-    const userSalarySlips = salarySlips.filter(slip => slip.employeeId === user.employeeId);
-    const userProjects = projects.filter(project => 
+    const userAttendance = attendance.filter((record: any) => record.employeeId === user.id);
+    const userLeaves = leaves.filter((leave: any) => leave.employeeId === user.employeeId);
+    const userSalarySlips = salarySlips.filter((slip: any) => slip.employeeId === user.employeeId);
+    const userProjects = projects.filter((project: any) => 
       project.assignedTo === user.email || project.department === user.department
     );
 
-    let data = {};
+    let data: any = {};
 
     switch (reportType) {
       case 'attendance':
-        const presentDays = userAttendance.filter(record => record.status === 'present').length;
-        const absentDays = userAttendance.filter(record => record.status === 'absent').length;
-        const lateDays = userAttendance.filter(record => record.status === 'late').length;
+        const presentDays = userAttendance.filter((record: any) => record.status === 'present').length;
+        const absentDays = userAttendance.filter((record: any) => record.status === 'absent').length;
+        const lateDays = userAttendance.filter((record: any) => record.status === 'late').length;
         
         data = {
           totalDays: userAttendance.length,
@@ -54,15 +54,15 @@ const EmployeeReports = () => {
       case 'leaves':
         data = {
           totalRequests: userLeaves.length,
-          approved: userLeaves.filter(leave => leave.status === 'approved').length,
-          pending: userLeaves.filter(leave => leave.status === 'pending').length,
-          rejected: userLeaves.filter(leave => leave.status === 'rejected').length,
+          approved: userLeaves.filter((leave: any) => leave.status === 'approved').length,
+          pending: userLeaves.filter((leave: any) => leave.status === 'pending').length,
+          rejected: userLeaves.filter((leave: any) => leave.status === 'rejected').length,
           totalDaysUsed: userLeaves
-            .filter(leave => leave.status === 'approved')
-            .reduce((total, leave) => {
+            .filter((leave: any) => leave.status === 'approved')
+            .reduce((total: number, leave: any) => {
               const start = new Date(leave.startDate);
               const end = new Date(leave.endDate);
-              const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+              const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
               return total + days;
             }, 0),
           recentRequests: userLeaves.slice(-5)
@@ -70,12 +70,12 @@ const EmployeeReports = () => {
         break;
       
       case 'salary':
-        const totalEarnings = userSalarySlips.reduce((sum, slip) => sum + slip.netSalary, 0);
+        const totalEarnings = userSalarySlips.reduce((sum: number, slip: any) => sum + slip.netSalary, 0);
         data = {
           totalSlips: userSalarySlips.length,
           totalEarnings,
           avgSalary: userSalarySlips.length > 0 ? totalEarnings / userSalarySlips.length : 0,
-          highestSalary: userSalarySlips.length > 0 ? Math.max(...userSalarySlips.map(slip => slip.netSalary)) : 0,
+          highestSalary: userSalarySlips.length > 0 ? Math.max(...userSalarySlips.map((slip: any) => slip.netSalary)) : 0,
           recentSlips: userSalarySlips.slice(-6)
         };
         break;
@@ -83,11 +83,11 @@ const EmployeeReports = () => {
       case 'projects':
         data = {
           totalProjects: userProjects.length,
-          completed: userProjects.filter(project => project.status === 'completed').length,
-          inProgress: userProjects.filter(project => project.status === 'in_progress').length,
-          notStarted: userProjects.filter(project => project.status === 'not_started').length,
+          completed: userProjects.filter((project: any) => project.status === 'completed').length,
+          inProgress: userProjects.filter((project: any) => project.status === 'in_progress').length,
+          notStarted: userProjects.filter((project: any) => project.status === 'not_started').length,
           avgProgress: userProjects.length > 0 
-            ? userProjects.reduce((sum, project) => sum + project.progress, 0) / userProjects.length 
+            ? userProjects.reduce((sum: number, project: any) => sum + (project.progress || 0), 0) / userProjects.length 
             : 0,
           recentProjects: userProjects.slice(-5)
         };
