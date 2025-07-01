@@ -1,13 +1,29 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage from '../components/auth/LoginPage';
+import AdminDashboard from '../components/admin/AdminDashboard';
+import EmployeeDashboard from '../components/employee/EmployeeDashboard';
+import { useAuth } from '../hooks/useAuth';
 
 const Index = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={user.role === 'admin' ? '/admin' : '/employee'} />} />
+      <Route path="/admin/*" element={user?.role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
+      <Route path="/employee/*" element={user?.role === 'employee' ? <EmployeeDashboard /> : <Navigate to="/login" />} />
+      <Route path="/" element={<Navigate to="/login" />} />
+    </Routes>
   );
 };
 
