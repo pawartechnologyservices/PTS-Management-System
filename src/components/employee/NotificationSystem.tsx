@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, FolderOpen, Check } from 'lucide-react';
@@ -26,7 +25,7 @@ const NotificationSystem = () => {
     if (!user) return;
     
     const userNotifications = JSON.parse(localStorage.getItem(`notifications_${user.id}`) || '[]');
-    setNotifications(userNotifications.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    setNotifications(userNotifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
     setUnreadCount(userNotifications.filter(n => !n.read).length);
   };
 
