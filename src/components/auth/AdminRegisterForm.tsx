@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, User, Mail, Phone, Building, UserCog, Shield } from 'lucide-react';
+import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { useToast } from '../../hooks/use-toast';
+import AdminRegisterFormFields from './AdminRegisterFormFields';
 
 interface AdminRegisterFormProps {
   onBack: () => void;
@@ -24,6 +24,10 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  const handleFieldChange = (field: keyof typeof formData, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,13 +53,9 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
     setLoading(true);
     
     try {
-      // Generate admin ID
       const adminId = `ADM${Date.now().toString().slice(-6)}`;
-      
-      // Get existing users
       const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
       
-      // Check if email already exists
       const emailExists = existingUsers.some((user: any) => user.email === formData.email);
       if (emailExists) {
         toast({
@@ -67,23 +67,15 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
         return;
       }
       
-      // Create new admin user
       const newAdmin = {
         id: Date.now().toString(),
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        department: formData.department,
-        designation: formData.designation,
+        ...formData,
         employeeId: adminId,
         role: 'admin',
         isActive: true,
-        createdAt: new Date().toISOString(),
-        password: formData.password,
-        companyName: formData.companyName
+        createdAt: new Date().toISOString()
       };
       
-      // Add to users array
       existingUsers.push(newAdmin);
       localStorage.setItem('hrms_users', JSON.stringify(existingUsers));
       
@@ -92,7 +84,6 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
         description: `Admin registration successful! Your Admin ID is: ${adminId}`,
       });
       
-      // Reset form
       setFormData({
         name: '',
         email: '',
@@ -151,119 +142,10 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Full Name</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      placeholder="Enter full name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="email"
-                      placeholder="admin@company.com"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Phone Number</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="tel"
-                      placeholder="Enter phone number"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Company Name</label>
-                  <div className="relative">
-                    <Building className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      placeholder="Enter company name"
-                      value={formData.companyName}
-                      onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Department</label>
-                  <div className="relative">
-                    <UserCog className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      value={formData.department}
-                      onChange={(e) => setFormData({...formData, department: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Designation</label>
-                  <div className="relative">
-                    <Shield className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      value={formData.designation}
-                      onChange={(e) => setFormData({...formData, designation: e.target.value})}
-                      className="pl-10"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Password</label>
-                  <Input
-                    type="password"
-                    placeholder="Create password (min 6 chars)"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Confirm Password</label>
-                  <Input
-                    type="password"
-                    placeholder="Confirm password"
-                    value={formData.confirmPassword}
-                    onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                    required
-                  />
-                </div>
-              </div>
+              <AdminRegisterFormFields
+                formData={formData}
+                onChange={handleFieldChange}
+              />
 
               <Button 
                 type="submit" 
