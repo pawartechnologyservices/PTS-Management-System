@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Receipt, Download, Eye, Calendar } from 'lucide-react';
@@ -7,6 +6,8 @@ import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
+import { generateSalarySlipPDF } from '../../utils/pdfGenerator';
+import { toast } from '../ui/use-toast';
 
 const EmployeeSalarySlips = () => {
   const { user } = useAuth();
@@ -62,6 +63,29 @@ This is a computer-generated salary slip.
     a.download = `salary-slip-${months[slip.month]}-${slip.year}.txt`;
     a.click();
     window.URL.revokeObjectURL(url);
+  };
+
+  const downloadSlipAsPDF = (slip) => {
+    const pdfData = {
+      employeeName: slip.employeeName,
+      employeeId: slip.employeeId,
+      month: months[slip.month],
+      year: slip.year,
+      basicSalary: slip.basicSalary,
+      allowances: slip.allowances,
+      deductions: slip.deductions,
+      netSalary: slip.netSalary,
+      generatedAt: slip.generatedAt,
+      companyName: 'Your Company Name',
+      companyAddress: 'Your Company Address'
+    };
+    
+    generateSalarySlipPDF(pdfData);
+    
+    toast({
+      title: "PDF Downloaded",
+      description: `Salary slip PDF downloaded for ${months[slip.month]} ${slip.year}`
+    });
   };
 
   const filteredSlips = salarySlips.filter(slip => slip.year === selectedYear);
@@ -263,10 +287,18 @@ This is a computer-generated salary slip.
                       </Button>
                       <Button
                         size="sm"
+                        variant="outline"
+                        onClick={() => downloadSlipAsPDF(slip)}
+                      >
+                        <Download className="h-3 w-3 mr-1" />
+                        PDF
+                      </Button>
+                      <Button
+                        size="sm"
                         onClick={() => downloadSlip(slip)}
                       >
                         <Download className="h-3 w-3 mr-1" />
-                        Download
+                        Text
                       </Button>
                     </div>
                   </div>
@@ -342,9 +374,9 @@ This is a computer-generated salary slip.
               </div>
               
               <div className="flex gap-2 mt-4">
-                <Button onClick={() => downloadSlip(selectedSlip)} className="flex-1">
+                <Button onClick={() => downloadSlipAsPDF(selectedSlip)} className="flex-1">
                   <Download className="h-3 w-3 mr-1" />
-                  Download
+                  Download PDF
                 </Button>
               </div>
             </div>
