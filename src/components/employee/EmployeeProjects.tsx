@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FolderOpen, Calendar, Target, Upload, MessageSquare } from 'lucide-react';
+import { FolderOpen, Calendar, Target, Upload, MessageSquare, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -9,6 +8,7 @@ import { Progress } from '../ui/progress';
 import { Textarea } from '../ui/textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { toast } from '../ui/use-toast';
+import NotificationSystem from './NotificationSystem';
 
 const EmployeeProjects = () => {
   const { user } = useAuth();
@@ -20,7 +20,7 @@ const EmployeeProjects = () => {
     const allProjects = JSON.parse(localStorage.getItem('projects') || '[]');
     // Filter projects assigned to current user or their department
     const userProjects = allProjects.filter(project => 
-      project.assignedTo === user?.email || 
+      (project.assignedEmployees && project.assignedEmployees.includes(user?.id)) ||
       project.department === user?.department
     );
     setProjects(userProjects);
@@ -53,6 +53,23 @@ const EmployeeProjects = () => {
           updates.status = 'in_progress';
         }
         
+        // Send notification to admin about progress update
+        const adminNotification = {
+          id: Date.now().toString(),
+          type: 'progress_update',
+          title: 'Project Progress Updated',
+          message: `${user?.name} updated progress on project: ${project.name} (${newProgress}%)`,
+          projectId: project.id,
+          employeeId: user?.id,
+          timestamp: new Date().toISOString(),
+          read: false
+        };
+        
+        // Save admin notification (in real app, send to all admins)
+        const adminNotifications = JSON.parse(localStorage.getItem('admin_notifications') || '[]');
+        adminNotifications.push(adminNotification);
+        localStorage.setItem('admin_notifications', JSON.stringify(adminNotifications));
+        
         return updates;
       }
       return project;
@@ -62,7 +79,7 @@ const EmployeeProjects = () => {
     
     // Update local state
     const userProjects = updatedProjects.filter(project => 
-      project.assignedTo === user?.email || 
+      (project.assignedEmployees && project.assignedEmployees.includes(user?.id)) ||
       project.department === user?.department
     );
     setProjects(userProjects);
@@ -133,6 +150,7 @@ const EmployeeProjects = () => {
           <h1 className="text-2xl font-bold text-gray-800">My Projects</h1>
           <p className="text-gray-600">View and update your assigned projects</p>
         </div>
+        <NotificationSystem />
       </motion.div>
 
       {/* Project Stats */}
@@ -244,6 +262,12 @@ const EmployeeProjects = () => {
                           <Badge className={getStatusColor(project.status)} variant="outline">
                             {project.status.replace('_', ' ').charAt(0).toUpperCase() + project.status.replace('_', ' ').slice(1)}
                           </Badge>
+                          {project.assignedEmployees && project.assignedEmployees.includes(user?.id) && (
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              <Bell className="h-3 w-3 mr-1" />
+                              Assigned to you
+                            </Badge>
+                          )}
                         </div>
                         
                         <p className="text-gray-600 mb-3">{project.description}</p>

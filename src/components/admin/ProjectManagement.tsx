@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FolderOpen, Plus, Users, Calendar, Target } from 'lucide-react';
+import { FolderOpen, Plus, Users, Calendar, Target, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,15 +9,18 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
+import { Checkbox } from '../ui/checkbox';
+import { toast } from '../ui/use-toast';
 
 const ProjectManagement = () => {
   const [projects, setProjects] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     department: '',
-    assignedTo: '',
+    assignedEmployees: [],
     startDate: '',
     endDate: '',
     priority: 'medium',
@@ -31,32 +34,102 @@ const ProjectManagement = () => {
   useEffect(() => {
     const savedProjects = JSON.parse(localStorage.getItem('projects') || '[]');
     setProjects(savedProjects);
+
+    const allUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const employeeUsers = allUsers.filter(user => user.role === 'employee' && user.isActive);
+    setEmployees(employeeUsers);
   }, []);
+
+  const sendNotificationToEmployee = (employee, project) => {
+    // Create notification for employee
+    const notification = {
+      id: Date.now().toString(),
+      type: 'project_assigned',
+      title: 'New Project Assigned',
+      message: `You have been assigned to project: ${project.name}`,
+      projectId: project.id,
+      employeeId: employee.id,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    // Save notification to localStorage (in real app, this would be sent to backend)
+    const existingNotifications = JSON.parse(localStorage.getItem(`notifications_${employee.id}`) || '[]');
+    existingNotifications.push(notification);
+    localStorage.setItem(`notifications_${employee.id}`, JSON.stringify(existingNotifications));
+
+    console.log(`Notification sent to ${employee.name} for project ${project.name}`);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    if (formData.assignedEmployees.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please assign at least one employee to the project.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const newProject = {
       id: Date.now().toString(),
       ...formData,
       progress: 0,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      createdBy: 'admin' // In real app, get from auth context
     };
 
     const updatedProjects = [...projects, newProject];
     setProjects(updatedProjects);
     localStorage.setItem('projects', JSON.stringify(updatedProjects));
     
+    // Send notifications to assigned employees
+    formData.assignedEmployees.forEach(employeeId => {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (employee) {
+        sendNotificationToEmployee(employee, newProject);
+      }
+    });
+
+    toast({
+      title: "Project Created",
+      description: `Project "${newProject.name}" has been created and assigned to ${formData.assignedEmployees.length} employee(s).`
+    });
+    
     setFormData({
       name: '',
       description: '',
       department: '',
-      assignedTo: '',
+      assignedEmployees: [],
       startDate: '',
       endDate: '',
       priority: 'medium',
       status: 'not_started'
     });
     setShowAddForm(false);
+  };
+
+  const handleEmployeeAssignment = (employeeId, checked) => {
+    if (checked) {
+      setFormData({
+        ...formData,
+        assignedEmployees: [...formData.assignedEmployees, employeeId]
+      });
+    } else {
+      setFormData({
+        ...formData,
+        assignedEmployees: formData.assignedEmployees.filter(id => id !== employeeId)
+      });
+    }
+  };
+
+  const getAssignedEmployeeNames = (assignedEmployeeIds) => {
+    return assignedEmployeeIds
+      .map(id => employees.find(emp => emp.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
   };
 
   const getPriorityColor = (priority) => {
@@ -134,12 +207,37 @@ const ProjectManagement = () => {
                   required
                 />
 
-                <Input
-                  placeholder="Assigned To (Employee Email)"
-                  value={formData.assignedTo}
-                  onChange={(e) => setFormData({...formData, assignedTo: e.target.value})}
-                  required
-                />
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Assign Team Members</label>
+                  <div className="border rounded-lg p-4 max-h-40 overflow-y-auto">
+                    {employees.length === 0 ? (
+                      <p className="text-gray-500 text-sm">No active employees available</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {employees.map(employee => (
+                          <div key={employee.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={employee.id}
+                              checked={formData.assignedEmployees.includes(employee.id)}
+                              onCheckedChange={(checked) => handleEmployeeAssignment(employee.id, checked)}
+                            />
+                            <label 
+                              htmlFor={employee.id} 
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              {employee.name} - {employee.department} ({employee.designation})
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {formData.assignedEmployees.length > 0 && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      {formData.assignedEmployees.length} employee(s) selected
+                    </p>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -190,7 +288,10 @@ const ProjectManagement = () => {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button type="submit">Create Project</Button>
+                  <Button type="submit">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Create & Assign Project
+                  </Button>
                   <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
                     Cancel
                   </Button>
@@ -245,7 +346,9 @@ const ProjectManagement = () => {
                         </div>
                         <div className="flex items-center gap-1 mb-1">
                           <Target className="h-3 w-3" />
-                          {project.assignedTo}
+                          <span className="truncate">
+                            {getAssignedEmployeeNames(project.assignedEmployees) || 'No assignments'}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
@@ -260,6 +363,13 @@ const ProjectManagement = () => {
                         </div>
                         <Progress value={project.progress} className="h-2" />
                       </div>
+
+                      {project.assignedEmployees && project.assignedEmployees.length > 0 && (
+                        <div className="text-xs text-blue-600">
+                          <Bell className="h-3 w-3 inline mr-1" />
+                          Assigned to {project.assignedEmployees.length} employee(s)
+                        </div>
+                      )}
                     </div>
                   </div>
                 </motion.div>
