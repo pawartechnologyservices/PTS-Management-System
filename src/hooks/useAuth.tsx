@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 interface User {
@@ -17,6 +18,7 @@ interface User {
   workMode?: string;
   reportingManager?: string;
   updatedAt?: string;
+  password?: string;
 }
 
 interface AuthContextType {
@@ -65,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinDate: new Date().toISOString().split('T')[0],
         workMode: 'On-site',
         reportingManager: '',
+        password: 'admin123',
         createdAt: new Date().toISOString()
       };
       
@@ -75,20 +78,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string, role: string): Promise<boolean> => {
     try {
-      // Simple password check - in real app, this would be handled by backend
-      if (role === 'admin' && email === 'admin@company.com' && password === 'admin123') {
-        const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+      const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+      
+      if (role === 'admin') {
+        // Find admin user by email and role
         const adminUser = users.find((u: User) => u.email === email && u.role === 'admin');
         
         if (adminUser) {
-          setUser(adminUser);
-          localStorage.setItem('hrms_user', JSON.stringify(adminUser));
-          return true;
+          // Check password - either default admin123 or stored password
+          const isValidPassword = password === 'admin123' || password === adminUser.password;
+          
+          if (isValidPassword) {
+            setUser(adminUser);
+            localStorage.setItem('hrms_user', JSON.stringify(adminUser));
+            return true;
+          }
         }
       }
       
       if (role === 'employee') {
-        const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
         const foundUser = users.find((u: User) => u.email === email && u.role === role);
         
         if (foundUser && foundUser.isActive) {
