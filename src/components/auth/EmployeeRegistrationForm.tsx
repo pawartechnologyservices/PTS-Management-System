@@ -6,9 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Textarea } from '../ui/textarea';
-import { UserPlus, Mail, User, Calendar, ArrowLeft, Phone, MapPin, Users, Briefcase } from 'lucide-react';
+import { UserPlus, Mail, User, Calendar, ArrowLeft } from 'lucide-react';
 
 interface EmployeeRegistrationFormProps {
   onBack: () => void;
@@ -18,28 +16,10 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
-    joiningDate: '',
-    department: '',
-    designation: '',
-    address: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    workMode: 'On-site'
+    joiningDate: ''
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-
-  const departments = [
-    'Human Resources', 'Engineering', 'Marketing', 'Sales', 'Finance', 
-    'Operations', 'Customer Support', 'Design', 'Legal', 'Administration'
-  ];
-
-  const designations = [
-    'Software Engineer', 'Senior Developer', 'Project Manager', 'Team Lead',
-    'HR Manager', 'Marketing Manager', 'Sales Executive', 'Designer',
-    'Analyst', 'Consultant', 'Intern', 'Assistant Manager'
-  ];
 
   const generateEmployeeId = () => {
     const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
@@ -51,10 +31,10 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.email || !formData.joiningDate || !formData.phone) {
+    if (!formData.name || !formData.email || !formData.joiningDate) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all fields",
         variant: "destructive",
       });
       return;
@@ -83,16 +63,16 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
       employeeId,
       name: formData.name,
       email: formData.email,
-      phone: formData.phone,
       role: 'employee',
-      department: formData.department,
-      designation: formData.designation,
-      address: formData.address,
-      emergencyContact: formData.emergencyContact,
-      emergencyPhone: formData.emergencyPhone,
-      workMode: formData.workMode,
+      department: '',
+      designation: '',
       isActive: false, // Requires admin approval
       joinDate: formData.joiningDate,
+      phone: '',
+      address: '',
+      emergencyContact: '',
+      emergencyPhone: '',
+      workMode: '',
       reportingManager: '',
       performanceScore: 0,
       profilePicture: '',
@@ -119,18 +99,7 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
       description: `Your registration has been submitted for admin approval. Employee ID: ${employeeId}`,
     });
 
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      joiningDate: '',
-      department: '',
-      designation: '',
-      address: '',
-      emergencyContact: '',
-      emergencyPhone: '',
-      workMode: 'On-site'
-    });
+    setFormData({ name: '', email: '', joiningDate: '' });
     setLoading(false);
   };
 
@@ -140,7 +109,7 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="w-full max-w-2xl"
+        className="w-full max-w-md"
       >
         <Card>
           <CardHeader className="text-center">
@@ -149,180 +118,52 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
             </div>
             <CardTitle className="text-2xl">Employee Registration</CardTitle>
             <CardDescription>
-              Complete registration for admin approval
+              Register for admin approval
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Personal Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Personal Information</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name *</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="name"
-                        type="text"
-                        placeholder="Enter your full name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="your.email@company.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number *</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="Enter phone number"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="joiningDate">Joining Date *</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="joiningDate"
-                        type="date"
-                        value={formData.joiningDate}
-                        onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Textarea
-                      id="address"
-                      placeholder="Enter your address"
-                      value={formData.address}
-                      onChange={(e) => setFormData({...formData, address: e.target.value})}
-                      className="pl-10 min-h-[80px]"
-                    />
-                  </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    className="pl-10"
+                  />
                 </div>
               </div>
-
-              {/* Professional Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Professional Information</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
-                    <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {departments.map((dept) => (
-                          <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="designation">Designation</Label>
-                    <Select value={formData.designation} onValueChange={(value) => setFormData({...formData, designation: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select designation" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {designations.map((desig) => (
-                          <SelectItem key={desig} value={desig}>{desig}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="workMode">Work Mode</Label>
-                  <Select value={formData.workMode} onValueChange={(value) => setFormData({...formData, workMode: value})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select work mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="On-site">On-site</SelectItem>
-                      <SelectItem value="Remote">Remote</SelectItem>
-                      <SelectItem value="Hybrid">Hybrid</SelectItem>
-                    </SelectContent>
-                  </Select>
+              
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="your.email@company.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    className="pl-10"
+                  />
                 </div>
               </div>
-
-              {/* Emergency Contact */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Emergency Contact</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyContact">Emergency Contact Name</Label>
-                    <div className="relative">
-                      <Users className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="emergencyContact"
-                        type="text"
-                        placeholder="Contact person name"
-                        value={formData.emergencyContact}
-                        onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyPhone">Emergency Contact Phone</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="emergencyPhone"
-                        type="tel"
-                        placeholder="Emergency contact number"
-                        value={formData.emergencyPhone}
-                        onChange={(e) => setFormData({...formData, emergencyPhone: e.target.value})}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="joiningDate">Joining Date</Label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="joiningDate"
+                    type="date"
+                    value={formData.joiningDate}
+                    onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
+                    className="pl-10"
+                  />
                 </div>
               </div>
               

@@ -5,7 +5,6 @@ import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { useToast } from '../../hooks/use-toast';
-import { useAuth } from '../../hooks/useAuth';
 import AdminRegisterFormFields from './AdminRegisterFormFields';
 
 interface AdminRegisterFormProps {
@@ -25,7 +24,6 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-  const { login } = useAuth();
 
   const handleFieldChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -55,9 +53,8 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
     setLoading(true);
     
     try {
+      const adminId = `ADM${Date.now().toString().slice(-6)}`;
       const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-      const adminCount = existingUsers.filter((user: any) => user.role === 'admin').length;
-      const adminId = `ADMIN${String(adminCount + 1).padStart(3, '0')}`;
       
       const emailExists = existingUsers.some((user: any) => user.email === formData.email);
       if (emailExists) {
@@ -72,18 +69,10 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
       
       const newAdmin = {
         id: Date.now().toString(),
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        department: formData.department,
-        designation: formData.designation,
-        companyName: formData.companyName,
-        password: formData.password,
+        ...formData,
         employeeId: adminId,
         role: 'admin',
         isActive: true,
-        joinDate: new Date().toISOString().split('T')[0],
-        workMode: 'On-site',
         createdAt: new Date().toISOString()
       };
       
@@ -94,16 +83,21 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
         title: "Success",
         description: `Admin registration successful! Your Admin ID is: ${adminId}`,
       });
-
-      // Auto-login the newly registered admin
-      const loginSuccess = await login(formData.email, formData.password, 'admin');
       
-      if (loginSuccess) {
-        toast({
-          title: "Welcome!",
-          description: "You have been automatically logged in.",
-        });
-      }
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        department: 'Administration',
+        designation: 'Administrator',
+        companyName: '',
+        password: '',
+        confirmPassword: ''
+      });
+      
+      setTimeout(() => {
+        onBack();
+      }, 2000);
       
     } catch (error) {
       toast({
