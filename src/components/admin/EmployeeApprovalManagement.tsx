@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -6,13 +5,15 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { toast } from '../ui/use-toast';
-import { UserCheck, UserX, Send, Calendar, Mail, User } from 'lucide-react';
+import { UserCheck, UserX, Send, Calendar, Mail, User, Phone } from 'lucide-react';
+import { SMSService } from '../../utils/smsService';
 
 interface PendingEmployee {
   id: string;
   employeeId: string;
   name: string;
   email: string;
+  phone: string;
   joinDate: string;
   appliedAt: string;
   status: string;
@@ -21,6 +22,7 @@ interface PendingEmployee {
 const EmployeeApprovalManagement = () => {
   const [pendingEmployees, setPendingEmployees] = useState<PendingEmployee[]>([]);
   const [otpInputs, setOtpInputs] = useState<{[key: string]: string}>({});
+  const [sendingOtp, setSendingOtp] = useState<{[key: string]: boolean}>({});
 
   useEffect(() => {
     loadPendingEmployees();
@@ -35,7 +37,14 @@ const EmployeeApprovalManagement = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const approveEmployee = (employeeId: string) => {
+  const getAdminPhone = () => {
+    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const currentUser = JSON.parse(localStorage.getItem('hrms_user') || '{}');
+    const admin = users.find((user: any) => user.role === 'admin' && user.id === currentUser.id);
+    return admin?.phone || '';
+  };
+
+  const approveEmployee = async (employeeId: string) => {
     const otpCode = otpInputs[employeeId];
     
     if (!otpCode || otpCode.length !== 6) {
@@ -47,6 +56,9 @@ const EmployeeApprovalManagement = () => {
       return;
     }
 
+    const employee = pendingEmployees.find(emp => emp.employeeId === employeeId);
+    if (!employee) return;
+
     // Update user in main users list
     const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
     const updatedUsers = users.map((user: any) => {
@@ -55,7 +67,8 @@ const EmployeeApprovalManagement = () => {
           ...user,
           isActive: true,
           otp: otpCode,
-          otpExpiry: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 minutes from now
+          otpExpiry: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          needsOtpVerification: true,
           approvedAt: new Date().toISOString()
         };
       }
@@ -74,12 +87,20 @@ const EmployeeApprovalManagement = () => {
     localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
     localStorage.setItem('pending_registrations', JSON.stringify(updatedPending));
 
+    // Send approval notification to employee
+    if (employee.phone) {
+      await SMSService.sendApprovalNotification(
+        employee.phone,
+        employee.name,
+        employee.employeeId
+      );
+    }
+
     toast({
       title: "Employee Approved",
-      description: `Employee ${employeeId} has been approved with OTP: ${otpCode}`,
+      description: `${employee.name} has been approved. Notifications sent via SMS.`,
     });
 
-    // Clear OTP input and reload
     setOtpInputs(prev => ({ ...prev, [employeeId]: '' }));
     loadPendingEmployees();
   };
@@ -115,9 +136,56 @@ const EmployeeApprovalManagement = () => {
     setOtpInputs(prev => ({ ...prev, [employeeId]: numericValue }));
   };
 
-  const autoGenerateOtp = (employeeId: string) => {
-    const otp = generateOtp();
-    setOtpInputs(prev => ({ ...prev, [employeeId]: otp }));
+  const autoGenerateAndSendOtp = async (employeeId: string) => {
+    const employee = pendingEmployees.find(emp => emp.employeeId === employeeId);
+    if (!employee) return;
+
+    const adminPhone = getAdminPhone();
+    if (!adminPhone) {
+      toast({
+        title: "Error",
+        description: "Admin phone number not found. Please update your profile.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setSendingOtp(prev => ({ ...prev, [employeeId]: true }));
+
+    try {
+      const otp = generateOtp();
+      setOtpInputs(prev => ({ ...prev, [employeeId]: otp }));
+      
+      // Send OTP to admin's phone
+      const success = await SMSService.sendOTPNotification(
+        adminPhone,
+        employee.name,
+        employee.employeeId,
+        otp
+      );
+
+      if (success) {
+        toast({
+          title: "OTP Sent Successfully",
+          description: `OTP ${otp} sent to admin phone: ${adminPhone.replace(/(\d{3})(\d{3})(\d{4})/, '$1-***-$3')}`,
+        });
+      } else {
+        toast({
+          title: "SMS Failed",
+          description: "Failed to send OTP via SMS. You can still use the generated OTP manually.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error sending OTP:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send OTP. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setSendingOtp(prev => ({ ...prev, [employeeId]: false }));
+    }
   };
 
   return (
@@ -130,6 +198,12 @@ const EmployeeApprovalManagement = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Employee Approval</h1>
           <p className="text-gray-600">Review and approve pending employee registrations</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="secondary" className="text-xs">
+              API Integrated
+            </Badge>
+            <p className="text-sm text-blue-600">OTP notifications sent to admin phone</p>
+          </div>
         </div>
         <Badge variant="outline" className="text-lg px-3 py-1">
           {pendingEmployees.length} Pending
@@ -177,6 +251,11 @@ const EmployeeApprovalManagement = () => {
                           <Mail className="h-4 w-4" />
                           {employee.email}
                         </div>
+
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone className="h-4 w-4" />
+                          {employee.phone}
+                        </div>
                         
                         <div className="flex items-center gap-2 text-sm text-gray-600">
                           <Calendar className="h-4 w-4" />
@@ -191,7 +270,7 @@ const EmployeeApprovalManagement = () => {
                       <div className="space-y-3">
                         <div>
                           <label className="text-sm font-medium mb-2 block">
-                            Generate OTP for Employee Login
+                            Generate & Send OTP to Admin Phone
                           </label>
                           <div className="flex gap-2">
                             <Input
@@ -202,13 +281,22 @@ const EmployeeApprovalManagement = () => {
                               maxLength={6}
                             />
                             <Button
-                              onClick={() => autoGenerateOtp(employee.employeeId)}
+                              onClick={() => autoGenerateAndSendOtp(employee.employeeId)}
                               variant="outline"
                               size="sm"
+                              disabled={sendingOtp[employee.employeeId]}
                             >
-                              <Send className="h-4 w-4" />
+                              {sendingOtp[employee.employeeId] ? (
+                                <div className="h-4 w-4 animate-spin border-2 border-blue-600 border-t-transparent rounded-full" />
+                              ) : (
+                                <Send className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
+                          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            SMS will be sent to admin & employee
+                          </p>
                         </div>
                         
                         <div className="flex gap-2">
@@ -218,7 +306,7 @@ const EmployeeApprovalManagement = () => {
                             disabled={!otpInputs[employee.employeeId] || otpInputs[employee.employeeId].length !== 6}
                           >
                             <UserCheck className="h-4 w-4 mr-2" />
-                            Approve
+                            Approve & Notify
                           </Button>
                           
                           <Button
