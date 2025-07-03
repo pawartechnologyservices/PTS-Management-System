@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import EnhancedLoginPage from '../components/auth/EnhancedLoginPage';
+import LoginPage from '../components/auth/LoginPage';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import EmployeeDashboard from '../components/employee/EmployeeDashboard';
 import { useAuth } from '../hooks/useAuth';
@@ -19,7 +19,7 @@ const Index = () => {
 
   return (
     <Routes>
-      <Route path="/login" element={!user ? <EnhancedLoginPage /> : <Navigate to={user.role === 'admin' ? '/admin' : '/employee'} />} />
+      <Route path="/login" element={!user ? <LoginPage /> : <Navigate to={user.role === 'admin' ? '/admin' : '/employee'} />} />
       <Route path="/admin/*" element={user?.role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
       <Route path="/employee/*" element={user?.role === 'employee' ? <EmployeeDashboard /> : <Navigate to="/login" />} />
       <Route path="/" element={<Navigate to="/login" />} />
