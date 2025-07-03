@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 interface User {
@@ -40,19 +39,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(JSON.parse(storedUser));
     }
     setLoading(false);
+    
+    // Initialize admin user if none exists
+    initializeAdminUser();
   }, []);
+
+  const initializeAdminUser = () => {
+    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const adminExists = users.some((user: User) => user.role === 'admin');
+    
+    if (!adminExists) {
+      const adminUser = {
+        id: 'admin-001',
+        email: 'admin@company.com',
+        name: 'System Administrator',
+        role: 'admin',
+        department: 'IT',
+        designation: 'Administrator',
+        employeeId: 'ADMIN001',
+        isActive: true,
+        phone: '',
+        address: '',
+        emergencyContact: '',
+        emergencyPhone: '',
+        joinDate: new Date().toISOString().split('T')[0],
+        workMode: 'On-site',
+        reportingManager: '',
+        createdAt: new Date().toISOString()
+      };
+      
+      users.push(adminUser);
+      localStorage.setItem('hrms_users', JSON.stringify(users));
+    }
+  };
 
   const login = async (email: string, password: string, role: string): Promise<boolean> => {
     try {
-      // Simulate API call
-      const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-      const foundUser = users.find((u: User) => u.email === email && u.role === role);
-      
-      if (foundUser && foundUser.isActive) {
-        setUser(foundUser);
-        localStorage.setItem('hrms_user', JSON.stringify(foundUser));
-        return true;
+      // Simple password check - in real app, this would be handled by backend
+      if (role === 'admin' && email === 'admin@company.com' && password === 'admin123') {
+        const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+        const adminUser = users.find((u: User) => u.email === email && u.role === 'admin');
+        
+        if (adminUser) {
+          setUser(adminUser);
+          localStorage.setItem('hrms_user', JSON.stringify(adminUser));
+          return true;
+        }
       }
+      
+      if (role === 'employee') {
+        const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+        const foundUser = users.find((u: User) => u.email === email && u.role === role);
+        
+        if (foundUser && foundUser.isActive) {
+          // Check if user needs OTP verification
+          if (foundUser.needsOtpVerification) {
+            return false; // Will be handled by OTP flow
+          }
+          
+          setUser(foundUser);
+          localStorage.setItem('hrms_user', JSON.stringify(foundUser));
+          return true;
+        }
+      }
+      
       return false;
     } catch (error) {
       console.error('Login error:', error);

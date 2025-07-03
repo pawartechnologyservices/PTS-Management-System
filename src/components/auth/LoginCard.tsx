@@ -12,6 +12,7 @@ interface LoginCardProps {
   onLogin: (email: string, password: string) => void;
   onRegister: () => void;
   loading: boolean;
+  isButton?: boolean;
 }
 
 const LoginCard: React.FC<LoginCardProps> = ({
@@ -20,7 +21,8 @@ const LoginCard: React.FC<LoginCardProps> = ({
   onActivate,
   onLogin,
   onRegister,
-  loading
+  loading,
+  isButton = false
 }) => {
   const isAdmin = userType === 'admin';
   const Icon = isAdmin ? Users : UserCheck;
@@ -40,29 +42,31 @@ const LoginCard: React.FC<LoginCardProps> = ({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isActive ? (
+        {isButton && isAdmin ? (
+          <Button 
+            className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
+            onClick={() => onLogin('', '')}
+          >
+            Login as Admin
+          </Button>
+        ) : (
           <LoginForm
             userType={userType}
             onSubmit={onLogin}
             loading={loading}
           />
-        ) : (
-          <Button 
-            variant="outline" 
-            className="w-full"
-            onClick={onActivate}
-          >
-            Login as {isAdmin ? 'Admin' : 'Employee'}
-          </Button>
         )}
-        <div className="mt-4 text-center">
-          <button
-            onClick={onRegister}
-            className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-          >
-            New {isAdmin ? 'Admin' : 'Employee'}? Register here
-          </button>
-        </div>
+        
+        {!isAdmin && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={onRegister}
+              className="text-sm text-green-600 hover:text-green-800 transition-colors"
+            >
+              New Employee? Register here
+            </button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
