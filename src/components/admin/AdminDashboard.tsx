@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import AdminSidebar from './AdminSidebar';
 import AdminDashboardHome from './AdminDashboardHome';
 import EmployeeManagement from './EmployeeManagement';
+import EmployeeApprovalManagement from './EmployeeApprovalManagement';
 import AttendanceManagement from './AttendanceManagement';
 import MeetingManagement from './MeetingManagement';
 import ProjectManagement from './ProjectManagement';
@@ -79,6 +80,7 @@ const AdminDashboard = () => {
             <Routes>
               <Route path="/" element={<AdminDashboardHome />} />
               <Route path="/employees" element={<EmployeeManagement />} />
+              <Route path="/employee-approval" element={<EmployeeApprovalManagement />} />
               <Route path="/attendance" element={<AttendanceManagement />} />
               <Route path="/meetings" element={<MeetingManagement />} />
               <Route path="/projects" element={<ProjectManagement />} />
