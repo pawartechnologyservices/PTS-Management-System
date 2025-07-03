@@ -43,12 +43,21 @@ const LoginCard: React.FC<LoginCardProps> = ({
       </CardHeader>
       <CardContent>
         {isButton && isAdmin ? (
-          <Button 
-            className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
-            onClick={() => onLogin('', '')}
-          >
-            Login as Admin
-          </Button>
+          <div className="space-y-3">
+            <Button 
+              className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
+              onClick={() => onLogin('', '')}
+            >
+              Login as Admin
+            </Button>
+            <Button 
+              variant="outline"
+              className="w-full border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
+              onClick={onRegister}
+            >
+              Register as Admin
+            </Button>
+          </div>
         ) : (
           <LoginForm
             userType={userType}

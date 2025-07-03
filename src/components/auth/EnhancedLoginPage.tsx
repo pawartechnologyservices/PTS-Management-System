@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import AdminLoginPage from './AdminLoginPage';
+import AdminRegisterForm from './AdminRegisterForm';
 import LoginCard from './LoginCard';
 import EmployeeRegistrationForm from './EmployeeRegistrationForm';
 import OtpVerificationForm from './OtpVerificationForm';
@@ -9,7 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/use-toast';
 
 const EnhancedLoginPage = () => {
-  const [activeView, setActiveView] = useState<'main' | 'admin' | 'employee-register' | 'employee-otp'>('main');
+  const [activeView, setActiveView] = useState<'main' | 'admin' | 'admin-register' | 'employee-register' | 'employee-otp'>('main');
   const [employeeEmail, setEmployeeEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -80,6 +81,14 @@ const EnhancedLoginPage = () => {
     return <AdminLoginPage />;
   }
 
+  if (activeView === 'admin-register') {
+    return (
+      <AdminRegisterForm 
+        onBack={() => setActiveView('main')} 
+      />
+    );
+  }
+
   if (activeView === 'employee-register') {
     return (
       <EmployeeRegistrationForm 
@@ -136,7 +145,7 @@ const EnhancedLoginPage = () => {
               isActive={true}
               onActivate={() => {}}
               onLogin={() => setActiveView('admin')}
-              onRegister={() => {}}
+              onRegister={() => setActiveView('admin-register')}
               loading={false}
               isButton={true}
             />
