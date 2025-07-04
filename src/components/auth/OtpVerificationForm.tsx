@@ -10,13 +10,18 @@ import { Shield, ArrowLeft } from 'lucide-react';
 
 interface OtpVerificationFormProps {
   email: string;
-  onSuccess: () => void;
+  onVerify: (otp: string) => Promise<boolean>;
   onBack: () => void;
+  loading: boolean;
 }
 
-const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({ email, onSuccess, onBack }) => {
+const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({ 
+  email, 
+  onVerify, 
+  onBack, 
+  loading 
+}) => {
   const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes
   const { toast } = useToast();
 
@@ -52,48 +57,10 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({ email, onSucc
       return;
     }
 
-    setLoading(true);
-
-    // Get the stored OTP for this email
-    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const user = users.find((u: any) => u.email === email);
-
-    if (!user || !user.otp || user.otp !== otp) {
-      toast({
-        title: "Error",
-        description: "Invalid OTP",
-        variant: "destructive",
-      });
-      setLoading(false);
-      return;
+    const success = await onVerify(otp);
+    if (!success) {
+      setOtp('');
     }
-
-    // Check if OTP has expired
-    if (new Date() > new Date(user.otpExpiry)) {
-      toast({
-        title: "Error",
-        description: "OTP has expired",
-        variant: "destructive",
-      });
-      setLoading(false);
-      return;
-    }
-
-    // Clear OTP after successful verification
-    user.otp = '';
-    user.otpExpiry = '';
-    user.needsOtpVerification = false;
-    
-    const updatedUsers = users.map((u: any) => u.email === email ? user : u);
-    localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
-
-    toast({
-      title: "Success",
-      description: "OTP verified successfully!",
-    });
-
-    setLoading(false);
-    onSuccess();
   };
 
   if (timeLeft === 0) {
@@ -103,7 +70,7 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({ email, onSucc
           <CardHeader className="text-center">
             <CardTitle className="text-red-600">OTP Expired</CardTitle>
             <CardDescription>
-              The OTP has expired. Please contact admin for a new OTP.
+              The OTP has expired. Please try logging in again.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -132,7 +99,7 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({ email, onSucc
             </div>
             <CardTitle className="text-2xl">OTP Verification</CardTitle>
             <CardDescription>
-              Enter the 6-digit OTP sent for {email}
+              Enter the 6-digit OTP sent to admin number (9096649556)
             </CardDescription>
           </CardHeader>
           <CardContent>

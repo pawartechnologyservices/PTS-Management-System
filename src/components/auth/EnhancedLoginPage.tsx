@@ -6,54 +6,53 @@ import AdminRegisterForm from './AdminRegisterForm';
 import LoginCard from './LoginCard';
 import EmployeeRegistrationForm from './EmployeeRegistrationForm';
 import OtpVerificationForm from './OtpVerificationForm';
+import ForgotPasswordForm from './ForgotPasswordForm';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/use-toast';
 
 const EnhancedLoginPage = () => {
-  const [activeView, setActiveView] = useState<'main' | 'admin' | 'admin-register' | 'employee-register' | 'employee-otp'>('main');
+  const [activeView, setActiveView] = useState<'main' | 'admin' | 'admin-register' | 'employee-register' | 'employee-otp' | 'forgot-password'>('main');
   const [employeeEmail, setEmployeeEmail] = useState('');
+  const [employeePassword, setEmployeePassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, sendOtp } = useAuth();
   const { toast } = useToast();
 
   const handleEmployeeLogin = async (email: string, password: string) => {
     setLoading(true);
+    setEmployeeEmail(email);
+    setEmployeePassword(password);
     
-    // Check if user exists and is approved
-    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const user = users.find((u: any) => u.email === email && u.role === 'employee');
+    const result = await login(email, password, 'employee');
     
-    if (!user) {
+    if (result.success) {
+      toast({
+        title: "Success",
+        description: "Login successful!",
+      });
+    } else if (result.requiresOtp) {
+      setActiveView('employee-otp');
+      toast({
+        title: "OTP Sent",
+        description: "OTP has been sent to admin number for verification.",
+      });
+    } else {
       toast({
         title: "Error",
-        description: "Employee not found. Please register first.",
-        variant: "destructive"
+        description: result.message || "Login failed",
+        variant: "destructive",
       });
-      setLoading(false);
-      return;
     }
     
-    if (!user.isActive) {
-      toast({
-        title: "Account Pending",
-        description: "Your account is pending admin approval.",
-        variant: "destructive"
-      });
-      setLoading(false);
-      return;
-    }
-    
-    if (user.needsOtpVerification || user.otp) {
-      setEmployeeEmail(email);
-      setActiveView('employee-otp');
-      setLoading(false);
-      return;
-    }
-    
-    const success = await login(email, password, 'employee');
     setLoading(false);
+  };
+
+  const handleOtpVerification = async (otp: string) => {
+    setLoading(true);
     
-    if (success) {
+    const result = await login(employeeEmail, employeePassword, 'employee', otp);
+    
+    if (result.success) {
       toast({
         title: "Success",
         description: "Login successful!",
@@ -61,24 +60,17 @@ const EnhancedLoginPage = () => {
     } else {
       toast({
         title: "Error",
-        description: "Invalid credentials",
+        description: result.message || "OTP verification failed",
         variant: "destructive",
       });
     }
-  };
-
-  const handleOtpSuccess = async () => {
-    const success = await login(employeeEmail, '', 'employee');
-    if (success) {
-      toast({
-        title: "Success",
-        description: "Login successful!",
-      });
-    }
+    
+    setLoading(false);
+    return result.success;
   };
 
   if (activeView === 'admin') {
-    return <AdminLoginPage />;
+    return <AdminLoginPage onForgotPassword={() => setActiveView('forgot-password')} />;
   }
 
   if (activeView === 'admin-register') {
@@ -101,7 +93,16 @@ const EnhancedLoginPage = () => {
     return (
       <OtpVerificationForm
         email={employeeEmail}
-        onSuccess={handleOtpSuccess}
+        onVerify={handleOtpVerification}
+        onBack={() => setActiveView('main')}
+        loading={loading}
+      />
+    );
+  }
+
+  if (activeView === 'forgot-password') {
+    return (
+      <ForgotPasswordForm
         onBack={() => setActiveView('main')}
       />
     );

@@ -7,8 +7,8 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Textarea } from '../ui/textarea';
-import { UserPlus, Mail, User, Calendar, ArrowLeft, Phone, MapPin, Users, Briefcase } from 'lucide-react';
+import { UserPlus, ArrowLeft, Upload, User } from 'lucide-react';
+import bcrypt from 'bcryptjs';
 
 interface EmployeeRegistrationFormProps {
   onBack: () => void;
@@ -18,40 +18,60 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     phone: '',
-    joiningDate: '',
     department: '',
     designation: '',
+    joinDate: '',
+    workMode: '',
     address: '',
     emergencyContact: '',
     emergencyPhone: '',
-    workMode: 'On-site'
+    profileImage: ''
   });
   const [loading, setLoading] = useState(false);
+  const [profileImagePreview, setProfileImagePreview] = useState<string>('');
   const { toast } = useToast();
 
-  const departments = [
-    'Human Resources', 'Engineering', 'Marketing', 'Sales', 'Finance', 
-    'Operations', 'Customer Support', 'Design', 'Legal', 'Administration'
-  ];
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
-  const designations = [
-    'Software Engineer', 'Senior Developer', 'Project Manager', 'Team Lead',
-    'HR Manager', 'Marketing Manager', 'Sales Executive', 'Designer',
-    'Analyst', 'Consultant', 'Intern', 'Assistant Manager'
-  ];
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        toast({
+          title: "Error",
+          description: "Profile image must be less than 2MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setProfileImagePreview(result);
+        setFormData(prev => ({ ...prev, profileImage: result }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const generateEmployeeId = () => {
-    const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const employees = existingUsers.filter((user: any) => user.role === 'employee');
-    const nextId = employees.length + 1;
-    return `EMP${nextId.toString().padStart(3, '0')}`;
+    const timestamp = Date.now().toString().slice(-4);
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `EMP${timestamp}${random}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name || !formData.email || !formData.joiningDate || !formData.phone) {
+
+    // Validation
+    if (!formData.name || !formData.email || !formData.password || !formData.phone || 
+        !formData.department || !formData.designation || !formData.joinDate) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -60,77 +80,90 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
       return;
     }
 
-    setLoading(true);
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Passwords do not match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Check if email already exists
     const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const emailExists = existingUsers.some((user: any) => user.email === formData.email);
-
-    if (emailExists) {
+    if (existingUsers.some((user: any) => user.email === formData.email)) {
       toast({
         title: "Error",
         description: "Email already registered",
         variant: "destructive",
       });
-      setLoading(false);
       return;
     }
 
-    const employeeId = generateEmployeeId();
-    
-    const newEmployee = {
-      id: Date.now().toString(),
-      employeeId,
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-      role: 'employee',
-      department: formData.department,
-      designation: formData.designation,
-      address: formData.address,
-      emergencyContact: formData.emergencyContact,
-      emergencyPhone: formData.emergencyPhone,
-      workMode: formData.workMode,
-      isActive: false, // Requires admin approval
-      joinDate: formData.joiningDate,
-      reportingManager: '',
-      performanceScore: 0,
-      profilePicture: '',
-      createdAt: new Date().toISOString(),
-      needsOtpVerification: true,
-      otp: '',
-      otpExpiry: ''
-    };
+    setLoading(true);
 
-    existingUsers.push(newEmployee);
-    localStorage.setItem('hrms_users', JSON.stringify(existingUsers));
+    try {
+      const employeeId = generateEmployeeId();
+      const hashedPassword = bcrypt.hashSync(formData.password, 10);
 
-    // Store pending registration for admin approval
-    const pendingRegistrations = JSON.parse(localStorage.getItem('pending_registrations') || '[]');
-    pendingRegistrations.push({
-      ...newEmployee,
-      status: 'pending_approval',
-      appliedAt: new Date().toISOString()
-    });
-    localStorage.setItem('pending_registrations', JSON.stringify(pendingRegistrations));
+      const newEmployee = {
+        id: `emp-${Date.now()}`,
+        employeeId,
+        name: formData.name,
+        email: formData.email,
+        hashedPassword,
+        phone: formData.phone,
+        department: formData.department,
+        designation: formData.designation,
+        joinDate: formData.joinDate,
+        workMode: formData.workMode || 'On-site',
+        address: formData.address,
+        emergencyContact: formData.emergencyContact,
+        emergencyPhone: formData.emergencyPhone,
+        profileImage: formData.profileImage,
+        role: 'employee',
+        isActive: false, // Pending admin approval
+        isFirstTimeLogin: true,
+        appliedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      };
 
-    toast({
-      title: "Registration Submitted",
-      description: `Your registration has been submitted for admin approval. Employee ID: ${employeeId}`,
-    });
+      // Add to users list
+      const updatedUsers = [...existingUsers, newEmployee];
+      localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
 
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      joiningDate: '',
-      department: '',
-      designation: '',
-      address: '',
-      emergencyContact: '',
-      emergencyPhone: '',
-      workMode: 'On-site'
-    });
+      // Add to pending registrations
+      const pendingRegistrations = JSON.parse(localStorage.getItem('pending_registrations') || '[]');
+      const pendingEmployee = {
+        ...newEmployee,
+        status: 'pending_approval'
+      };
+      pendingRegistrations.push(pendingEmployee);
+      localStorage.setItem('pending_registrations', JSON.stringify(pendingRegistrations));
+
+      toast({
+        title: "Registration Successful",
+        description: `Employee ID: ${employeeId}. Your registration is pending admin approval.`,
+      });
+
+      onBack();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Registration failed. Please try again.",
+        variant: "destructive",
+      });
+    }
+
     setLoading(false);
   };
 
@@ -149,134 +182,138 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
             </div>
             <CardTitle className="text-2xl">Employee Registration</CardTitle>
             <CardDescription>
-              Complete registration for admin approval
+              Join our organization - Registration is subject to admin approval
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Personal Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Personal Information</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Full Name *</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="name"
-                        type="text"
-                        placeholder="Enter your full name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Profile Image Upload */}
+              <div className="space-y-2">
+                <Label>Profile Picture</Label>
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                    {profileImagePreview ? (
+                      <img src={profileImagePreview} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-8 h-8 text-gray-400" />
+                    )}
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="your.email@company.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number *</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="Enter phone number"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="joiningDate">Joining Date *</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="joiningDate"
-                        type="date"
-                        value={formData.joiningDate}
-                        onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
-                        className="pl-10"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                    <Textarea
-                      id="address"
-                      placeholder="Enter your address"
-                      value={formData.address}
-                      onChange={(e) => setFormData({...formData, address: e.target.value})}
-                      className="pl-10 min-h-[80px]"
+                  <div>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="profileImage"
                     />
+                    <Label htmlFor="profileImage" className="cursor-pointer">
+                      <Button type="button" variant="outline" size="sm" asChild>
+                        <span>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Upload Photo
+                        </span>
+                      </Button>
+                    </Label>
+                    <p className="text-xs text-gray-500 mt-1">Max 2MB, JPG/PNG</p>
                   </div>
                 </div>
               </div>
 
-              {/* Professional Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Professional Information</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
-                    <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {departments.map((dept) => (
-                          <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="designation">Designation</Label>
-                    <Select value={formData.designation} onValueChange={(value) => setFormData({...formData, designation: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select designation" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {designations.map((desig) => (
-                          <SelectItem key={desig} value={desig}>{desig}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    placeholder="employee@company.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    placeholder="Minimum 6 characters"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password *</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                    placeholder="Confirm password"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                    placeholder="10-digit phone number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="department">Department *</Label>
+                  <Select onValueChange={(value) => handleInputChange('department', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="IT">IT</SelectItem>
+                      <SelectItem value="HR">HR</SelectItem>
+                      <SelectItem value="Finance">Finance</SelectItem>
+                      <SelectItem value="Marketing">Marketing</SelectItem>
+                      <SelectItem value="Sales">Sales</SelectItem>
+                      <SelectItem value="Operations">Operations</SelectItem>
+                      <SelectItem value="Digital Marketing">Digital Marketing</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="designation">Designation *</Label>
+                  <Input
+                    id="designation"
+                    value={formData.designation}
+                    onChange={(e) => handleInputChange('designation', e.target.value)}
+                    placeholder="Job title"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="joinDate">Join Date *</Label>
+                  <Input
+                    id="joinDate"
+                    type="date"
+                    value={formData.joinDate}
+                    onChange={(e) => handleInputChange('joinDate', e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="workMode">Work Mode</Label>
-                  <Select value={formData.workMode} onValueChange={(value) => setFormData({...formData, workMode: value})}>
+                  <Select onValueChange={(value) => handleInputChange('workMode', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select work mode" />
                     </SelectTrigger>
@@ -287,54 +324,47 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              {/* Emergency Contact */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Emergency Contact</h3>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyContact">Emergency Contact Name</Label>
-                    <div className="relative">
-                      <Users className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="emergencyContact"
-                        type="text"
-                        placeholder="Contact person name"
-                        value={formData.emergencyContact}
-                        onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="emergencyPhone">Emergency Contact Phone</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        id="emergencyPhone"
-                        type="tel"
-                        placeholder="Emergency contact number"
-                        value={formData.emergencyPhone}
-                        onChange={(e) => setFormData({...formData, emergencyPhone: e.target.value})}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyContact">Emergency Contact</Label>
+                  <Input
+                    id="emergencyContact"
+                    value={formData.emergencyContact}
+                    onChange={(e) => handleInputChange('emergencyContact', e.target.value)}
+                    placeholder="Emergency contact name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="emergencyPhone">Emergency Phone</Label>
+                  <Input
+                    id="emergencyPhone"
+                    value={formData.emergencyPhone}
+                    onChange={(e) => handleInputChange('emergencyPhone', e.target.value)}
+                    placeholder="Emergency contact phone"
+                  />
                 </div>
               </div>
-              
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  value={formData.address}
+                  onChange={(e) => handleInputChange('address', e.target.value)}
+                  placeholder="Full address"
+                />
+              </div>
+
               <Button 
-                type="submit" 
+                type="submit"
                 className="w-full bg-green-600 hover:bg-green-700 transition-colors"
                 disabled={loading}
               >
-                {loading ? 'Submitting...' : 'Submit Registration'}
+                {loading ? 'Registering...' : 'Register as Employee'}
               </Button>
             </form>
-            
+
             <div className="mt-4 text-center">
               <button
                 onClick={onBack}

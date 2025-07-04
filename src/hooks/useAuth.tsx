@@ -1,5 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import bcrypt from 'bcryptjs';
 
 interface User {
   id: string;
@@ -19,16 +20,40 @@ interface User {
   reportingManager?: string;
   updatedAt?: string;
   password?: string;
+  profileImage?: string;
+  isFirstTimeLogin?: boolean;
+  hashedPassword?: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string, role: string) => Promise<boolean>;
+  login: (email: string, password: string, role: string, otp?: string) => Promise<{ success: boolean; requiresOtp?: boolean; message?: string }>;
   logout: () => void;
   loading: boolean;
+  sendOtp: (email: string) => Promise<boolean>;
+  resetPassword: (email: string, newPassword: string, otp: string) => Promise<boolean>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Predefined admin credentials
+const PREDEFINED_ADMINS = [
+  {
+    id: 'admin-001',
+    email: 'rahulpawar.ceo@gmail.com',
+    password: 'RP2025',
+    name: 'Rahul Pawar',
+    designation: 'CEO'
+  },
+  {
+    id: 'admin-002', 
+    email: 'swapnilgunake.gm@gmail.com',
+    password: 'SG2025',
+    name: 'Swapnil Gunake',
+    designation: 'General Manager'
+  }
+];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -42,78 +67,248 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setLoading(false);
     
-    // Initialize admin user if none exists
-    initializeAdminUser();
+    // Initialize predefined admin users
+    initializePredefinedAdmins();
   }, []);
 
-  const initializeAdminUser = () => {
+  const initializePredefinedAdmins = () => {
     const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const adminExists = users.some((user: User) => user.role === 'admin');
     
-    if (!adminExists) {
-      const adminUser = {
-        id: 'admin-001',
-        email: 'admin@company.com',
-        name: 'System Administrator',
-        role: 'admin',
-        department: 'IT',
-        designation: 'Administrator',
-        employeeId: 'ADMIN001',
-        isActive: true,
-        phone: '',
-        address: '',
-        emergencyContact: '',
-        emergencyPhone: '',
-        joinDate: new Date().toISOString().split('T')[0],
-        workMode: 'On-site',
-        reportingManager: '',
-        password: 'admin123',
-        createdAt: new Date().toISOString()
-      };
+    PREDEFINED_ADMINS.forEach(predefinedAdmin => {
+      const existingAdmin = users.find((user: User) => user.email === predefinedAdmin.email);
       
-      users.push(adminUser);
-      localStorage.setItem('hrms_users', JSON.stringify(users));
+      if (!existingAdmin) {
+        const adminUser = {
+          id: predefinedAdmin.id,
+          email: predefinedAdmin.email,
+          name: predefinedAdmin.name,
+          role: 'admin' as const,
+          department: 'Management',
+          designation: predefinedAdmin.designation,
+          employeeId: predefinedAdmin.id.toUpperCase(),
+          isActive: true,
+          phone: '',
+          address: '',
+          emergencyContact: '',
+          emergencyPhone: '',
+          joinDate: new Date().toISOString().split('T')[0],
+          workMode: 'On-site',
+          reportingManager: '',
+          hashedPassword: bcrypt.hashSync(predefinedAdmin.password, 10),
+          profileImage: '',
+          createdAt: new Date().toISOString()
+        };
+        
+        users.push(adminUser);
+      }
+    });
+    
+    localStorage.setItem('hrms_users', JSON.stringify(users));
+  };
+
+  const sendOtpToStaticNumber = async (otp: string): Promise<boolean> => {
+    try {
+      const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'e3527447-5244-11f0-a562-0200cd936042',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          route: 'v3',
+          sender_id: 'HRMSYS',
+          message: `Your Employee Login OTP is: ${otp}`,
+          language: 'english',
+          flash: 0,
+          numbers: '9096649556',
+        }),
+      });
+
+      return response.ok;
+    } catch (error) {
+      console.error('SMS sending failed:', error);
+      return false;
     }
   };
 
-  const login = async (email: string, password: string, role: string): Promise<boolean> => {
+  const generateOtp = (): string => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  const sendOtp = async (email: string): Promise<boolean> => {
+    const otp = generateOtp();
+    
+    // Store OTP temporarily
+    const otpData = {
+      email,
+      otp,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+    };
+    
+    localStorage.setItem('pending_otp', JSON.stringify(otpData));
+    
+    // Send OTP to static number
+    return await sendOtpToStaticNumber(otp);
+  };
+
+  const login = async (email: string, password: string, role: string, otp?: string): Promise<{ success: boolean; requiresOtp?: boolean; message?: string }> => {
     try {
       const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
       
       if (role === 'admin') {
-        // Find admin user by email and role
-        const adminUser = users.find((u: User) => u.email === email && u.role === 'admin');
+        // Check predefined admin credentials
+        const predefinedAdmin = PREDEFINED_ADMINS.find(admin => admin.email === email);
+        if (predefinedAdmin && predefinedAdmin.password === password) {
+          const adminUser = users.find((u: User) => u.email === email);
+          if (adminUser) {
+            setUser(adminUser);
+            localStorage.setItem('hrms_user', JSON.stringify(adminUser));
+            return { success: true };
+          }
+        }
         
-        if (adminUser) {
-          // Check password - either default admin123 or stored password
-          const isValidPassword = password === 'admin123' || password === adminUser.password;
-          
+        // Check for custom admin password
+        const adminUser = users.find((u: User) => u.email === email && u.role === 'admin');
+        if (adminUser && adminUser.hashedPassword) {
+          const isValidPassword = bcrypt.compareSync(password, adminUser.hashedPassword);
           if (isValidPassword) {
             setUser(adminUser);
             localStorage.setItem('hrms_user', JSON.stringify(adminUser));
-            return true;
+            return { success: true };
           }
         }
+        
+        return { success: false, message: 'Invalid admin credentials' };
       }
       
       if (role === 'employee') {
-        const foundUser = users.find((u: User) => u.email === email && u.role === role);
+        const foundUser = users.find((u: User) => u.email === email && u.role === 'employee');
         
-        if (foundUser && foundUser.isActive) {
-          // Check if user needs OTP verification
-          if (foundUser.needsOtpVerification) {
-            return false; // Will be handled by OTP flow
+        if (!foundUser) {
+          return { success: false, message: 'Employee not found' };
+        }
+        
+        if (!foundUser.isActive) {
+          return { success: false, message: 'Account pending admin approval' };
+        }
+        
+        // Verify password
+        const isValidPassword = bcrypt.compareSync(password, foundUser.hashedPassword || '');
+        if (!isValidPassword) {
+          return { success: false, message: 'Invalid password' };
+        }
+        
+        // Check if first time login
+        if (foundUser.isFirstTimeLogin !== false) {
+          if (!otp) {
+            // Send OTP and require verification
+            const otpSent = await sendOtp(email);
+            if (otpSent) {
+              return { success: false, requiresOtp: true, message: 'OTP sent to admin number' };
+            } else {
+              return { success: false, message: 'Failed to send OTP' };
+            }
+          } else {
+            // Verify OTP
+            const storedOtpData = JSON.parse(localStorage.getItem('pending_otp') || '{}');
+            if (storedOtpData.email === email && storedOtpData.otp === otp && Date.now() < storedOtpData.expiresAt) {
+              // OTP verified, mark as not first time login
+              foundUser.isFirstTimeLogin = false;
+              const updatedUsers = users.map((u: User) => u.email === email ? foundUser : u);
+              localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
+              localStorage.removeItem('pending_otp');
+              
+              setUser(foundUser);
+              localStorage.setItem('hrms_user', JSON.stringify(foundUser));
+              return { success: true };
+            } else {
+              return { success: false, message: 'Invalid or expired OTP' };
+            }
           }
-          
+        } else {
+          // Regular login without OTP
           setUser(foundUser);
           localStorage.setItem('hrms_user', JSON.stringify(foundUser));
-          return true;
+          return { success: true };
         }
       }
       
-      return false;
+      return { success: false, message: 'Invalid credentials' };
     } catch (error) {
       console.error('Login error:', error);
+      return { success: false, message: 'Login failed' };
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword: string, otp: string): Promise<boolean> => {
+    try {
+      const storedOtpData = JSON.parse(localStorage.getItem('pending_otp') || '{}');
+      
+      if (storedOtpData.email !== email || storedOtpData.otp !== otp || Date.now() >= storedOtpData.expiresAt) {
+        return false;
+      }
+      
+      const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+      const updatedUsers = users.map((u: User) => {
+        if (u.email === email) {
+          return { ...u, hashedPassword: bcrypt.hashSync(newPassword, 10) };
+        }
+        return u;
+      });
+      
+      localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
+      localStorage.removeItem('pending_otp');
+      
+      return true;
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return false;
+    }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+    if (!user) return false;
+    
+    try {
+      const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+      const currentUser = users.find((u: User) => u.id === user.id);
+      
+      if (!currentUser) return false;
+      
+      // For admin, check predefined password first
+      if (user.role === 'admin') {
+        const predefinedAdmin = PREDEFINED_ADMINS.find(admin => admin.email === user.email);
+        const isCurrentPasswordValid = 
+          (predefinedAdmin && predefinedAdmin.password === currentPassword) ||
+          (currentUser.hashedPassword && bcrypt.compareSync(currentPassword, currentUser.hashedPassword));
+        
+        if (!isCurrentPasswordValid) return false;
+      } else {
+        // For employee, check hashed password
+        if (!currentUser.hashedPassword || !bcrypt.compareSync(currentPassword, currentUser.hashedPassword)) {
+          return false;
+        }
+      }
+      
+      // Update password
+      const updatedUsers = users.map((u: User) => {
+        if (u.id === user.id) {
+          return { ...u, hashedPassword: bcrypt.hashSync(newPassword, 10) };
+        }
+        return u;
+      });
+      
+      localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
+      
+      // Update current user
+      const updatedUser = { ...user, hashedPassword: bcrypt.hashSync(newPassword, 10) };
+      setUser(updatedUser);
+      localStorage.setItem('hrms_user', JSON.stringify(updatedUser));
+      
+      return true;
+    } catch (error) {
+      console.error('Change password error:', error);
       return false;
     }
   };
@@ -124,7 +319,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, sendOtp, resetPassword, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

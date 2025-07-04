@@ -9,7 +9,11 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Users, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
-const AdminLoginPage = () => {
+interface AdminLoginPageProps {
+  onForgotPassword: () => void;
+}
+
+const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,10 +34,10 @@ const AdminLoginPage = () => {
     }
 
     setLoading(true);
-    const success = await login(email, password, 'admin');
+    const result = await login(email, password, 'admin');
     setLoading(false);
 
-    if (success) {
+    if (result.success) {
       toast({
         title: "Success",
         description: "Admin login successful!",
@@ -41,7 +45,7 @@ const AdminLoginPage = () => {
     } else {
       toast({
         title: "Error",
-        description: "Invalid admin credentials",
+        description: result.message || "Invalid admin credentials",
         variant: "destructive",
       });
     }
@@ -112,6 +116,15 @@ const AdminLoginPage = () => {
                 {loading ? 'Signing in...' : 'Sign In as Admin'}
               </Button>
             </form>
+            
+            <div className="mt-4 text-center">
+              <button
+                onClick={onForgotPassword}
+                className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                Forgot Password?
+              </button>
+            </div>
           </CardContent>
         </Card>
       </motion.div>

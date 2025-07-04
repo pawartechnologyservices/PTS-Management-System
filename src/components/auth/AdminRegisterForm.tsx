@@ -1,12 +1,15 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Shield } from 'lucide-react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../hooks/useAuth';
-import AdminRegisterFormFields from './AdminRegisterFormFields';
+import { useToast } from '../../hooks/use-toast';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Users, ArrowLeft, Upload, User, Eye, EyeOff } from 'lucide-react';
+import bcrypt from 'bcryptjs';
 
 interface AdminRegisterFormProps {
   onBack: () => void;
@@ -16,24 +19,64 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
-    department: 'Administration',
-    designation: 'Administrator',
-    companyName: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    phone: '',
+    department: 'Management',
+    designation: '',
+    profileImage: ''
   });
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
+  const [profileImagePreview, setProfileImagePreview] = useState<string>('');
   const { login } = useAuth();
+  const { toast } = useToast();
 
-  const handleFieldChange = (field: keyof typeof formData, value: string) => {
+  const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        toast({
+          title: "Error",
+          description: "Profile image must be less than 2MB",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setProfileImagePreview(result);
+        setFormData(prev => ({ ...prev, profileImage: result }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const generateAdminId = () => {
+    const timestamp = Date.now().toString().slice(-4);
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `ADM${timestamp}${random}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // Validation
+    if (!formData.name || !formData.email || !formData.password || !formData.phone || !formData.designation) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: "Error",
@@ -52,59 +95,62 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
       return;
     }
 
+    // Check if email already exists
+    const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    if (existingUsers.some((user: any) => user.email === formData.email)) {
+      toast({
+        title: "Error",
+        description: "Email already registered",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
-    
+
     try {
-      const existingUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-      const adminCount = existingUsers.filter((user: any) => user.role === 'admin').length;
-      const adminId = `ADMIN${String(adminCount + 1).padStart(3, '0')}`;
-      
-      const emailExists = existingUsers.some((user: any) => user.email === formData.email);
-      if (emailExists) {
-        toast({
-          title: "Error",
-          description: "Email already exists. Please use a different email.",
-          variant: "destructive",
-        });
-        setLoading(false);
-        return;
-      }
-      
+      const adminId = generateAdminId();
+      const hashedPassword = bcrypt.hashSync(formData.password, 10);
+
       const newAdmin = {
-        id: Date.now().toString(),
+        id: `admin-${Date.now()}`,
+        employeeId: adminId,
         name: formData.name,
         email: formData.email,
+        hashedPassword,
         phone: formData.phone,
         department: formData.department,
         designation: formData.designation,
-        companyName: formData.companyName,
-        password: formData.password,
-        employeeId: adminId,
-        role: 'admin',
-        isActive: true,
         joinDate: new Date().toISOString().split('T')[0],
         workMode: 'On-site',
+        address: '',
+        emergencyContact: '',
+        emergencyPhone: '',
+        reportingManager: '',
+        profileImage: formData.profileImage,
+        role: 'admin',
+        isActive: true,
         createdAt: new Date().toISOString()
       };
-      
-      existingUsers.push(newAdmin);
-      localStorage.setItem('hrms_users', JSON.stringify(existingUsers));
-      
+
+      // Add to users list
+      const updatedUsers = [...existingUsers, newAdmin];
+      localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
+
       toast({
-        title: "Success",
-        description: `Admin registration successful! Your Admin ID is: ${adminId}`,
+        title: "Registration Successful",
+        description: "Admin account created successfully. Logging you in...",
       });
 
-      // Auto-login the newly registered admin
-      const loginSuccess = await login(formData.email, formData.password, 'admin');
-      
-      if (loginSuccess) {
+      // Auto-login after registration
+      const result = await login(formData.email, formData.password, 'admin');
+      if (result.success) {
         toast({
           title: "Welcome!",
-          description: "You have been automatically logged in.",
+          description: "You have been logged in successfully.",
         });
       }
-      
+
     } catch (error) {
       toast({
         title: "Error",
@@ -112,7 +158,7 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
         variant: "destructive",
       });
     }
-    
+
     setLoading(false);
   };
 
@@ -122,55 +168,152 @@ const AdminRegisterForm: React.FC<AdminRegisterFormProps> = ({ onBack }) => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="w-full max-w-2xl mx-auto"
+        className="w-full max-w-2xl"
       >
-        <Card className="shadow-lg">
-          <CardHeader>
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onBack}
-                className="hover:bg-gray-100 transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <CardTitle className="text-2xl">Admin Registration</CardTitle>
-                  <p className="text-gray-600 mt-1">Create administrator account</p>
-                </div>
-              </div>
+        <Card>
+          <CardHeader className="text-center">
+            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+              <Users className="w-8 h-8 text-blue-600" />
             </div>
+            <CardTitle className="text-2xl">Admin Registration</CardTitle>
+            <CardDescription>
+              Create an administrator account
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <AdminRegisterFormFields
-                formData={formData}
-                onChange={handleFieldChange}
-              />
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Profile Image Upload */}
+              <div className="space-y-2">
+                <Label>Profile Picture</Label>
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                    {profileImagePreview ? (
+                      <img src={profileImagePreview} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-8 h-8 text-gray-400" />
+                    )}
+                  </div>
+                  <div>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="profileImage"
+                    />
+                    <Label htmlFor="profileImage" className="cursor-pointer">
+                      <Button type="button" variant="outline" size="sm" asChild>
+                        <span>
+                          <Upload className="w-4 h-4 mr-2" />
+                          Upload Photo
+                        </span>
+                      </Button>
+                    </Label>
+                    <p className="text-xs text-gray-500 mt-1">Max 2MB, JPG/PNG</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    placeholder="Enter full name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    placeholder="admin@company.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) => handleInputChange('password', e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password *</Label>
+                  <Input
+                    id="confirmPassword"
+                    type={showPassword ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                    placeholder="Confirm password"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Input
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                    placeholder="10-digit phone number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="designation">Designation *</Label>
+                  <Select onValueChange={(value) => handleInputChange('designation', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select designation" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CEO">CEO</SelectItem>
+                      <SelectItem value="CTO">CTO</SelectItem>
+                      <SelectItem value="General Manager">General Manager</SelectItem>
+                      <SelectItem value="HR Manager">HR Manager</SelectItem>
+                      <SelectItem value="Operations Manager">Operations Manager</SelectItem>
+                      <SelectItem value="Administrator">Administrator</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               <Button 
-                type="submit" 
+                type="submit"
                 className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
                 disabled={loading}
               >
-                {loading ? 'Registering...' : 'Register as Admin'}
+                {loading ? 'Creating Account...' : 'Create Admin Account'}
               </Button>
-
-              <div className="text-center text-sm text-gray-600">
-                <p>By registering as an admin, you will have full access to:</p>
-                <ul className="mt-2 space-y-1">
-                  <li>• Employee management and data</li>
-                  <li>• Leave requests and approvals</li>
-                  <li>• Attendance tracking</li>
-                  <li>• System settings and reports</li>
-                </ul>
-              </div>
             </form>
+
+            <div className="mt-4 text-center">
+              <button
+                onClick={onBack}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors mx-auto"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Login
+              </button>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
