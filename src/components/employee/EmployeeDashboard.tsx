@@ -12,6 +12,7 @@ import SocialMediaCalendar from './SocialMediaCalendar';
 import EmployeeLeaves from './EmployeeLeaves';
 import EmployeeSalarySlips from './EmployeeSalarySlips';
 import EmployeeReports from './EmployeeReports';
+import EmployeeChat from './EmployeeChat';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../ui/button';
 import { Menu, X } from 'lucide-react';
@@ -85,6 +86,7 @@ const EmployeeDashboard = () => {
               <Route path="/leaves" element={<EmployeeLeaves />} />
               <Route path="/salary" element={<EmployeeSalarySlips />} />
               <Route path="/reports" element={<EmployeeReports />} />
+              <Route path="/chat" element={<EmployeeChat />} />
             </Routes>
           </div>
         </main>

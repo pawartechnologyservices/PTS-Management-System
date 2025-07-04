@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -14,7 +13,8 @@ import {
   Phone,
   MapPin,
   Calendar,
-  User
+  User,
+  Camera
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -22,7 +22,9 @@ import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { useToast } from '../../hooks/use-toast';
+import bcrypt from 'bcryptjs';
 
 interface Employee {
   id: string;
@@ -34,6 +36,7 @@ interface Employee {
   employeeId: string;
   isActive: boolean;
   createdAt: string;
+  profileImage?: string;
 }
 
 const EmployeeManagement = () => {
@@ -54,7 +57,8 @@ const EmployeeManagement = () => {
     phone: '',
     department: '',
     designation: '',
-    password: ''
+    password: '',
+    profileImage: ''
   });
 
   const departments = [
@@ -114,6 +118,17 @@ const EmployeeManagement = () => {
     setFilteredEmployees(filtered);
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setNewEmployee(prev => ({ ...prev, profileImage: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleAddEmployee = () => {
     if (!newEmployee.name || !newEmployee.email || !newEmployee.phone || 
         !newEmployee.department || !newEmployee.designation || !newEmployee.password) {
@@ -139,7 +154,9 @@ const EmployeeManagement = () => {
       role: 'employee',
       isActive: true,
       createdAt: new Date().toISOString(),
-      password: newEmployee.password
+      hashedPassword: bcrypt.hashSync(newEmployee.password, 10),
+      profileImage: newEmployee.profileImage,
+      isFirstTimeLogin: true
     };
 
     users.push(employee);
@@ -151,7 +168,8 @@ const EmployeeManagement = () => {
       phone: '',
       department: '',
       designation: '',
-      password: ''
+      password: '',
+      profileImage: ''
     });
     
     setShowAddDialog(false);
@@ -254,11 +272,34 @@ const EmployeeManagement = () => {
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Employee</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
+                {/* Profile Picture Upload */}
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="relative">
+                    <Avatar className="w-20 h-20">
+                      <AvatarImage src={newEmployee.profileImage} />
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-lg">
+                        {newEmployee.name ? newEmployee.name.split(' ').map(n => n[0]).join('') : <Camera className="w-6 h-6" />}
+                      </AvatarFallback>
+                    </Avatar>
+                    <label htmlFor="employee-profile-upload" className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-1.5 cursor-pointer hover:bg-blue-700 transition-colors">
+                      <Upload className="w-3 h-3" />
+                    </label>
+                  </div>
+                  <input
+                    id="employee-profile-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                  <p className="text-sm text-gray-600">Upload profile picture</p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium">Full Name</label>
@@ -411,9 +452,12 @@ const EmployeeManagement = () => {
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {employee.name.split(' ').map(n => n[0]).join('')}
-                    </div>
+                    <Avatar className="w-12 h-12">
+                      <AvatarImage src={employee.profileImage} />
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                        {employee.name.split(' ').map(n => n[0]).join('')}
+                      </AvatarFallback>
+                    </Avatar>
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold">{employee.name}</h3>
@@ -521,9 +565,12 @@ const EmployeeManagement = () => {
             </DialogHeader>
             <div className="space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-xl">
-                  {selectedEmployee.name.split(' ').map(n => n[0]).join('')}
-                </div>
+                <Avatar className="w-16 h-16">
+                  <AvatarImage src={selectedEmployee.profileImage} />
+                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-xl">
+                    {selectedEmployee.name.split(' ').map(n => n[0]).join('')}
+                  </AvatarFallback>
+                </Avatar>
                 <div>
                   <h3 className="text-lg font-semibold">{selectedEmployee.name}</h3>
                   <p className="text-gray-600">{selectedEmployee.designation}</p>
