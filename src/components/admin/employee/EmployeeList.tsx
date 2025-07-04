@@ -136,7 +136,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
                 disabled={currentPage === 1}
               >
                 Previous
@@ -156,7 +156,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                onClick={() => setCurrentPage(Math.min(currentPage + 1, totalPages))}
                 disabled={currentPage === totalPages}
               >
                 Next
