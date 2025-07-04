@@ -1,95 +1,118 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/use-toast';
+import { useChatStore } from '../../store/chatStore';
 import UserList from './UserList';
 import ChatWindow from './ChatWindow';
 import { User } from '../../types/chat';
-
-interface Message {
-  id: string;
-  senderId: string;
-  receiverId: string;
-  content: string;
-  type: 'text' | 'image' | 'video';
-  timestamp: Date;
-  edited?: boolean;
-  deleted?: boolean;
-  status: 'sent' | 'delivered' | 'read';
-}
 
 const ChatInterface = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const {
+    messages,
+    onlineUsers,
+    typingUsers,
+    currentChat,
+    addMessage,
+    editMessage,
+    deleteMessage,
+    setOnlineUsers,
+    setTypingUser,
+    setCurrentChat,
+    getChatId
+  } = useChatStore();
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load messages from localStorage
+  // Initialize online users (simulate some users being online)
   useEffect(() => {
-    if (selectedUser) {
-      const chatKey = `chat_${[user?.id, selectedUser.id].sort().join('_')}`;
-      const savedMessages = localStorage.getItem(chatKey);
-      if (savedMessages) {
-        setMessages(JSON.parse(savedMessages));
-      } else {
-        setMessages([]);
-      }
-    }
-  }, [selectedUser, user?.id]);
+    const allUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const randomOnlineUsers = allUsers
+      .filter((u: any) => u.id !== user?.id)
+      .slice(0, Math.floor(Math.random() * 3) + 1)
+      .map((u: any) => u.id);
+    
+    setOnlineUsers(randomOnlineUsers);
+    
+    // Simulate users going online/offline
+    const interval = setInterval(() => {
+      const onlineCount = Math.floor(Math.random() * allUsers.length / 2) + 1;
+      const shuffled = allUsers.filter((u: any) => u.id !== user?.id).sort(() => 0.5 - Math.random());
+      setOnlineUsers(shuffled.slice(0, onlineCount).map((u: any) => u.id));
+    }, 30000); // Change every 30 seconds
 
-  // Auto-scroll to bottom
+    return () => clearInterval(interval);
+  }, [user?.id, setOnlineUsers]);
+
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, currentChat]);
 
-  // Save messages to localStorage
-  const saveMessages = (newMessages: Message[]) => {
-    if (selectedUser) {
-      const chatKey = `chat_${[user?.id, selectedUser.id].sort().join('_')}`;
-      localStorage.setItem(chatKey, JSON.stringify(newMessages));
-    }
+  // Handle user selection
+  const handleUserSelect = (selectedUser: User) => {
+    setSelectedUser(selectedUser);
+    const chatId = getChatId(user!.id, selectedUser.id);
+    setCurrentChat(chatId);
   };
 
+  // Send message
   const sendMessage = (content: string, type: 'text' | 'image' | 'video' = 'text') => {
     if (!selectedUser || !user) return;
 
-    const newMessage: Message = {
+    const chatId = getChatId(user.id, selectedUser.id);
+    const newMessage = {
       id: Date.now().toString(),
       senderId: user.id,
       receiverId: selectedUser.id,
       content,
       type,
       timestamp: new Date(),
-      status: 'sent'
+      status: 'sent' as const,
+      ...(type !== 'text' && { mediaUrl: content })
     };
 
-    const updatedMessages = [...messages, newMessage];
-    setMessages(updatedMessages);
-    saveMessages(updatedMessages);
-
-    // Play notification sound
+    addMessage(chatId, newMessage);
     playNotificationSound();
+
+    // Simulate message delivery and read status
+    setTimeout(() => {
+      editMessage(chatId, newMessage.id, content);
+      // Update status to delivered then read
+      setTimeout(() => {
+        const updatedMessage = { ...newMessage, status: 'delivered' as const };
+        setTimeout(() => {
+          const readMessage = { ...updatedMessage, status: 'read' as const };
+        }, 1000);
+      }, 500);
+    }, 100);
   };
 
-  const editMessage = (messageId: string, newContent: string) => {
-    const updatedMessages = messages.map(msg =>
-      msg.id === messageId ? { ...msg, content: newContent, edited: true } : msg
-    );
-    setMessages(updatedMessages);
-    saveMessages(updatedMessages);
+  // Handle typing
+  const handleTyping = (isTyping: boolean) => {
+    if (!selectedUser || !user) return;
+    const chatId = getChatId(user.id, selectedUser.id);
+    setTypingUser(chatId, user.id, isTyping);
   };
 
-  const deleteMessage = (messageId: string, deleteForEveryone: boolean = false) => {
-    const updatedMessages = messages.map(msg =>
-      msg.id === messageId ? { ...msg, deleted: true, content: deleteForEveryone ? 'This message was deleted' : '' } : msg
-    );
-    setMessages(updatedMessages);
-    saveMessages(updatedMessages);
+  // Edit message
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    if (!selectedUser || !user) return;
+    const chatId = getChatId(user.id, selectedUser.id);
+    editMessage(chatId, messageId, newContent);
+  };
+
+  // Delete message
+  const handleDeleteMessage = (messageId: string, deleteForEveryone: boolean = false) => {
+    if (!selectedUser || !user) return;
+    const chatId = getChatId(user.id, selectedUser.id);
+    deleteMessage(chatId, messageId, deleteForEveryone);
   };
 
   const playNotificationSound = () => {
@@ -98,38 +121,59 @@ const ChatInterface = () => {
     audio.play().catch(() => {});
   };
 
+  const getCurrentChatMessages = () => {
+    if (!selectedUser || !user) return [];
+    const chatId = getChatId(user.id, selectedUser.id);
+    return messages[chatId] || [];
+  };
+
+  const getCurrentTypingUsers = () => {
+    if (!selectedUser || !user) return [];
+    const chatId = getChatId(user.id, selectedUser.id);
+    return typingUsers[chatId] || [];
+  };
+
   return (
     <div className="flex h-full bg-gray-50">
-      <div className="w-80 border-r border-gray-200 bg-white">
+      {/* Sidebar */}
+      <div className="w-80 border-r border-gray-200 bg-white flex-shrink-0">
         <UserList
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           selectedUser={selectedUser}
-          onUserSelect={setSelectedUser}
+          onUserSelect={handleUserSelect}
           onlineUsers={onlineUsers}
         />
       </div>
       
-      <div className="flex-1 flex flex-col">
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col min-w-0">
         {selectedUser ? (
           <ChatWindow
             selectedUser={selectedUser}
-            messages={messages}
+            messages={getCurrentChatMessages()}
             onSendMessage={sendMessage}
-            onEditMessage={editMessage}
-            onDeleteMessage={deleteMessage}
-            onExitChat={() => setSelectedUser(null)}
-            typingUsers={typingUsers}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            onExitChat={() => {
+              setSelectedUser(null);
+              setCurrentChat(null);
+            }}
+            onTyping={handleTyping}
+            typingUsers={getCurrentTypingUsers()}
             messagesEndRef={messagesEndRef}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
+          <div className="flex-1 flex items-center justify-center text-gray-500 bg-gray-50">
             <div className="text-center">
               <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4 mx-auto">
-                💬
+                <span className="text-4xl">💬</span>
               </div>
-              <h3 className="text-lg font-medium mb-2">Start a conversation</h3>
-              <p>Select a user from the sidebar to begin chatting</p>
+              <h3 className="text-lg font-medium mb-2 text-gray-700">WhatsApp Web</h3>
+              <p className="text-gray-500 max-w-sm">
+                Send and receive messages without keeping your phone online.<br />
+                Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
+              </p>
             </div>
           </div>
         )}
