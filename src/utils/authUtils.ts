@@ -2,6 +2,7 @@
 import bcrypt from 'bcryptjs';
 import { User, OtpData } from '../types/auth';
 import { PREDEFINED_ADMINS } from '../constants/adminCredentials';
+import { SMSService } from './smsService';
 
 export const initializePredefinedAdmins = () => {
   const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
@@ -19,7 +20,7 @@ export const initializePredefinedAdmins = () => {
         designation: predefinedAdmin.designation,
         employeeId: predefinedAdmin.id.toUpperCase(),
         isActive: true,
-        phone: '',
+        phone: predefinedAdmin.phone || '+919096649556', // Use admin's phone from constants
         address: '',
         emergencyContact: '',
         emergencyPhone: '',
@@ -42,11 +43,27 @@ export const generateOtp = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-export const sendOtpToStaticNumber = async (otp: string): Promise<boolean> => {
+export const getAdminPhoneNumber = (): string => {
+  const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+  const adminUser = users.find((user: User) => user.role === 'admin');
+  return adminUser?.phone || '+919096649556'; // Fallback to default number
+};
+
+export const sendOtpToAdmin = async (otp: string, employeeName: string, employeeId: string): Promise<boolean> => {
   try {
-    console.log(`OTP ${otp} would be sent to 9096649556 for employee verification`);
-    // Simulate API call - in real implementation, this would call SMS service
-    return true;
+    const adminPhone = getAdminPhoneNumber();
+    console.log(`Sending OTP ${otp} to admin at ${adminPhone} for employee verification`);
+    
+    // Use the actual SMS service
+    const success = await SMSService.sendOTPNotification(adminPhone, employeeName, employeeId, otp);
+    
+    if (success) {
+      console.log(`OTP successfully sent to admin phone: ${adminPhone}`);
+    } else {
+      console.error('Failed to send OTP via SMS service');
+    }
+    
+    return success;
   } catch (error) {
     console.error('SMS sending failed:', error);
     return false;

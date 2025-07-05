@@ -8,13 +8,15 @@ export const PREDEFINED_ADMINS: PredefinedAdmin[] = [
     email: 'rahulpawar.ceo@gmail.com',
     password: 'RP2025',
     name: 'Rahul Pawar',
-    designation: 'CEO'
+    designation: 'CEO',
+    phone: '+919096649556' // Admin's registered mobile number
   },
   {
     id: 'admin-002', 
     email: 'swapnilgunke.pm@gmail.com',
     password: 'Swapnil2025',
     name: 'Swapnil Gunke',
-    designation: 'Product Manager'
+    designation: 'Product Manager',
+    phone: '+919096649556' // Admin's registered mobile number
   }
 ];

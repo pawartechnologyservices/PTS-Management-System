@@ -7,6 +7,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Shield, ArrowLeft } from 'lucide-react';
+import { getAdminPhoneNumber } from '../../utils/authUtils';
 
 interface OtpVerificationFormProps {
   email: string;
@@ -23,9 +24,12 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({
 }) => {
   const [otp, setOtp] = useState('');
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes
+  const [adminPhone, setAdminPhone] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
+    setAdminPhone(getAdminPhoneNumber());
+    
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -99,7 +103,7 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({
             </div>
             <CardTitle className="text-2xl">OTP Verification</CardTitle>
             <CardDescription>
-              Enter the 6-digit OTP sent to admin number (9096649556)
+              Enter the 6-digit OTP sent to admin number ({adminPhone})
             </CardDescription>
           </CardHeader>
           <CardContent>

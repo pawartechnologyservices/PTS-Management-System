@@ -45,4 +45,5 @@ export interface PredefinedAdmin {
   password: string;
   name: string;
   designation: string;
+  phone?: string;
 }

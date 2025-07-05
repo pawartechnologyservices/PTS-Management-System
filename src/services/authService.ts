@@ -1,8 +1,7 @@
-
 import { User } from '../types/auth';
 import { PREDEFINED_ADMINS } from '../constants/adminCredentials';
 import { verifyPassword, verifyAdminPassword, hashPassword } from '../utils/passwordUtils';
-import { generateOtp, sendOtpToStaticNumber, storeOtpData, getStoredOtpData, clearOtpData } from '../utils/authUtils';
+import { generateOtp, sendOtpToAdmin, storeOtpData, getStoredOtpData, clearOtpData } from '../utils/authUtils';
 
 export const authenticateAdmin = (email: string, password: string): User | null => {
   if (!verifyAdminPassword(email, password)) {
@@ -37,13 +36,13 @@ export const authenticateEmployee = async (
   if (foundUser.isFirstTimeLogin !== false) {
     if (!otp) {
       const generatedOtp = generateOtp();
-      const otpSent = await sendOtpToStaticNumber(generatedOtp);
+      const otpSent = await sendOtpToAdmin(generatedOtp, foundUser.name, foundUser.employeeId);
       
       if (otpSent) {
         storeOtpData(email, generatedOtp);
-        return { success: false, requiresOtp: true, message: 'OTP sent to admin number (9096649556)' };
+        return { success: false, requiresOtp: true, message: 'OTP sent to admin for verification' };
       } else {
-        return { success: false, message: 'Failed to send OTP' };
+        return { success: false, message: 'Failed to send OTP to admin' };
       }
     } else {
       const storedOtpData = getStoredOtpData();
@@ -69,8 +68,15 @@ export const authenticateEmployee = async (
 
 export const sendOtpForPasswordReset = async (email: string): Promise<boolean> => {
   const otp = generateOtp();
-  storeOtpData(email, otp);
-  return await sendOtpToStaticNumber(otp);
+  const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+  const user = users.find((u: User) => u.email === email);
+  
+  if (user) {
+    storeOtpData(email, otp);
+    return await sendOtpToAdmin(otp, user.name, user.employeeId || user.id);
+  }
+  
+  return false;
 };
 
 export const resetUserPassword = (email: string, newPassword: string, otp: string): boolean => {
