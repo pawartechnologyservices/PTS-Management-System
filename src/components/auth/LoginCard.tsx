@@ -13,6 +13,7 @@ interface LoginCardProps {
   onRegister: () => void;
   loading: boolean;
   isButton?: boolean;
+  hideRegister?: boolean;
 }
 
 const LoginCard: React.FC<LoginCardProps> = ({
@@ -22,7 +23,8 @@ const LoginCard: React.FC<LoginCardProps> = ({
   onLogin,
   onRegister,
   loading,
-  isButton = false
+  isButton = false,
+  hideRegister = false
 }) => {
   const isAdmin = userType === 'admin';
   const Icon = isAdmin ? Users : UserCheck;
@@ -50,13 +52,15 @@ const LoginCard: React.FC<LoginCardProps> = ({
             >
               Login as Admin
             </Button>
-            <Button 
-              variant="outline"
-              className="w-full border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
-              onClick={onRegister}
-            >
-              Register as Admin
-            </Button>
+            {!hideRegister && (
+              <Button 
+                variant="outline"
+                className="w-full border-blue-300 text-blue-600 hover:bg-blue-50 transition-colors"
+                onClick={onRegister}
+              >
+                Register as Admin
+              </Button>
+            )}
           </div>
         ) : (
           <LoginForm
@@ -66,7 +70,7 @@ const LoginCard: React.FC<LoginCardProps> = ({
           />
         )}
         
-        {!isAdmin && (
+        {!isAdmin && !hideRegister && (
           <div className="mt-4 text-center">
             <button
               onClick={onRegister}
