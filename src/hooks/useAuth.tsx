@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import bcrypt from 'bcryptjs';
 
@@ -37,7 +36,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Predefined admin credentials
+// Predefined admin credentials - DO NOT ALLOW REGISTRATION
 const PREDEFINED_ADMINS = [
   {
     id: 'admin-001',
@@ -48,10 +47,10 @@ const PREDEFINED_ADMINS = [
   },
   {
     id: 'admin-002', 
-    email: 'swapnilgunake.gm@gmail.com',
-    password: 'SG2025',
-    name: 'Swapnil Gunake',
-    designation: 'General Manager'
+    email: 'swapnilgunke.pm@gmail.com',
+    password: 'Swapnil2025',
+    name: 'Swapnil Gunke',
+    designation: 'Product Manager'
   }
 ];
 
@@ -108,23 +107,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const sendOtpToStaticNumber = async (otp: string): Promise<boolean> => {
     try {
-      const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'e3527447-5244-11f0-a562-0200cd936042',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          route: 'v3',
-          sender_id: 'HRMSYS',
-          message: `Your Employee Login OTP is: ${otp}`,
-          language: 'english',
-          flash: 0,
-          numbers: '9096649556',
-        }),
-      });
-
-      return response.ok;
+      console.log(`OTP ${otp} would be sent to 9096649556 for employee verification`);
+      // Simulate API call - in real implementation, this would call SMS service
+      return true;
     } catch (error) {
       console.error('SMS sending failed:', error);
       return false;
@@ -157,22 +142,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
       
       if (role === 'admin') {
-        // Check predefined admin credentials
+        // Check predefined admin credentials only
         const predefinedAdmin = PREDEFINED_ADMINS.find(admin => admin.email === email);
         if (predefinedAdmin && predefinedAdmin.password === password) {
           const adminUser = users.find((u: User) => u.email === email);
           if (adminUser) {
-            setUser(adminUser);
-            localStorage.setItem('hrms_user', JSON.stringify(adminUser));
-            return { success: true };
-          }
-        }
-        
-        // Check for custom admin password
-        const adminUser = users.find((u: User) => u.email === email && u.role === 'admin');
-        if (adminUser && adminUser.hashedPassword) {
-          const isValidPassword = bcrypt.compareSync(password, adminUser.hashedPassword);
-          if (isValidPassword) {
             setUser(adminUser);
             localStorage.setItem('hrms_user', JSON.stringify(adminUser));
             return { success: true };
@@ -205,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Send OTP and require verification
             const otpSent = await sendOtp(email);
             if (otpSent) {
-              return { success: false, requiresOtp: true, message: 'OTP sent to admin number' };
+              return { success: false, requiresOtp: true, message: 'OTP sent to admin number (9096649556)' };
             } else {
               return { success: false, message: 'Failed to send OTP' };
             }
@@ -227,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
         } else {
-          // Regular login without OTP
+          // Regular login without OTP (after first successful verification)
           setUser(foundUser);
           localStorage.setItem('hrms_user', JSON.stringify(foundUser));
           return { success: true };

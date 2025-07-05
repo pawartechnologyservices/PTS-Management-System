@@ -121,6 +121,10 @@ const OtpVerificationForm: React.FC<OtpVerificationFormProps> = ({
                 Time remaining: <span className="font-mono font-bold text-purple-600">{formatTime(timeLeft)}</span>
               </div>
               
+              <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
+                <strong>Note:</strong> This OTP verification is only required for your first-time login. Future logins will not require OTP.
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-purple-600 hover:bg-purple-700 transition-colors"

@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import AdminLoginPage from './AdminLoginPage';
-import AdminRegisterForm from './AdminRegisterForm';
 import LoginCard from './LoginCard';
 import EmployeeRegistrationForm from './EmployeeRegistrationForm';
 import OtpVerificationForm from './OtpVerificationForm';
@@ -11,7 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/use-toast';
 
 const EnhancedLoginPage = () => {
-  const [activeView, setActiveView] = useState<'main' | 'admin' | 'admin-register' | 'employee-register' | 'employee-otp' | 'forgot-password'>('main');
+  const [activeView, setActiveView] = useState<'main' | 'admin' | 'employee-register' | 'employee-otp' | 'forgot-password'>('main');
   const [employeeEmail, setEmployeeEmail] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +33,7 @@ const EnhancedLoginPage = () => {
       setActiveView('employee-otp');
       toast({
         title: "OTP Sent",
-        description: "OTP has been sent to admin number for verification.",
+        description: result.message || "OTP has been sent for verification.",
       });
     } else {
       toast({
@@ -71,14 +70,6 @@ const EnhancedLoginPage = () => {
 
   if (activeView === 'admin') {
     return <AdminLoginPage onForgotPassword={() => setActiveView('forgot-password')} />;
-  }
-
-  if (activeView === 'admin-register') {
-    return (
-      <AdminRegisterForm 
-        onBack={() => setActiveView('main')} 
-      />
-    );
   }
 
   if (activeView === 'employee-register') {
@@ -146,9 +137,16 @@ const EnhancedLoginPage = () => {
               isActive={true}
               onActivate={() => {}}
               onLogin={() => setActiveView('admin')}
-              onRegister={() => setActiveView('admin-register')}
+              onRegister={() => {
+                toast({
+                  title: "Admin Registration Disabled",
+                  description: "Admin accounts are pre-configured. Please contact system administrator.",
+                  variant: "destructive",
+                });
+              }}
               loading={false}
               isButton={true}
+              hideRegister={true}
             />
           </motion.div>
 
