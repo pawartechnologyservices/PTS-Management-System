@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthContextType } from '../types/auth';
 import { initializePredefinedAdmins } from '../utils/authUtils';
-import { authenticateAdmin, authenticateEmployee, sendOtpForPasswordReset, resetUserPassword } from '../services/authService';
+import { authenticateAdmin, authenticateEmployee, resetUserPassword } from '../services/authService';
 import { verifyUserPassword, hashPassword } from '../utils/passwordUtils';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,10 +51,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const sendOtp = async (email: string): Promise<boolean> => {
-    return await sendOtpForPasswordReset(email);
-  };
-
   const resetPassword = async (email: string, newPassword: string, otp: string): Promise<boolean> => {
     return resetUserPassword(email, newPassword, otp);
   };
@@ -96,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, sendOtp, resetPassword, changePassword }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, resetPassword, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

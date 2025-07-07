@@ -102,8 +102,8 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
       const existingUser = users.find((u: any) => u.email === formData.email);
       if (existingUser) {
         toast({
-          title: "Error",
-          description: "User with this email already exists", 
+          title: "Registration Failed",
+          description: "An account with this email already exists", 
           variant: "destructive",
         });
         setLoading(false);
@@ -131,7 +131,6 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
         reportingManager: '',
         hashedPassword,
         profileImage: formData.profileImage,
-        isFirstTimeLogin: true,
         createdAt: new Date().toISOString()
       };
 
@@ -140,7 +139,7 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
 
       toast({
         title: "Registration Successful!",
-        description: `Your employee ID is ${empId}. Please wait for admin approval to login.`,
+        description: `Your employee ID is ${empId}. Registration successful. Awaiting admin activation.`,
       });
 
       // Clear form
@@ -159,9 +158,10 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
       });
       
     } catch (error) {
+      console.error('Registration error:', error);
       toast({
-        title: "Error",
-        description: "Registration failed. Please try again.",
+        title: "Registration Failed",
+        description: "An error occurred during registration. Please try again.",
         variant: "destructive",
       });
     } finally {

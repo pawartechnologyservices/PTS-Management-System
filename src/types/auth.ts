@@ -26,7 +26,6 @@ export interface AuthContextType {
   login: (email: string, password: string, role: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   loading: boolean;
-  sendOtp: (email: string) => Promise<boolean>;
   resetPassword: (email: string, newPassword: string, otp: string) => Promise<boolean>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
 }
