@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Download, Filter, Search, Users } from 'lucide-react';
+import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { toast } from '../ui/use-toast';
 
 const AttendanceManagement = () => {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -43,6 +44,23 @@ const AttendanceManagement = () => {
 
     setFilteredRecords(filtered);
   }, [searchTerm, filterDate, filterStatus, attendanceRecords]);
+
+  const markAsLate = (recordId: string) => {
+    const updatedRecords = attendanceRecords.map(record => {
+      if (record.id === recordId) {
+        return { ...record, status: 'late', markedLateBy: 'admin', markedLateAt: new Date().toISOString() };
+      }
+      return record;
+    });
+
+    setAttendanceRecords(updatedRecords);
+    localStorage.setItem('attendance_records', JSON.stringify(updatedRecords));
+    
+    toast({
+      title: "Success",
+      description: "Employee marked as late successfully",
+    });
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -162,6 +180,7 @@ const AttendanceManagement = () => {
                     <th className="text-left p-3">Punch Out</th>
                     <th className="text-left p-3">Status</th>
                     <th className="text-left p-3">Work Mode</th>
+                    <th className="text-left p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,11 +217,29 @@ const AttendanceManagement = () => {
                         <Badge className={getStatusColor(record.status)}>
                           {record.status}
                         </Badge>
+                        {record.markedLateBy && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Marked by {record.markedLateBy}
+                          </p>
+                        )}
                       </td>
                       <td className="p-3">
                         <Badge variant="outline">
                           {record.workMode || 'office'}
                         </Badge>
+                      </td>
+                      <td className="p-3">
+                        {record.status !== 'late' && record.status !== 'absent' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => markAsLate(record.id)}
+                            className="text-yellow-600 hover:text-yellow-700"
+                          >
+                            <AlertTriangle className="h-3 w-3 mr-1" />
+                            Mark Late
+                          </Button>
+                        )}
                       </td>
                     </motion.tr>
                   ))}

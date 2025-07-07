@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Calendar, Download, MapPin } from 'lucide-react';
+import { Clock, Calendar, Download, MapPin, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -254,6 +254,12 @@ const EmployeeAttendance = () => {
                             {record.workMode}
                           </Badge>
                         )}
+                        {record.markedLateBy && (
+                          <Badge variant="outline" className="flex items-center gap-1 text-yellow-600">
+                            <AlertTriangle className="h-3 w-3" />
+                            Marked by Admin
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-sm text-gray-600">
                         {new Date(record.date).toLocaleDateString('en-US', { 
@@ -262,6 +268,11 @@ const EmployeeAttendance = () => {
                           day: 'numeric' 
                         })}
                       </p>
+                      {record.markedLateBy && (
+                        <p className="text-xs text-yellow-600 mt-1">
+                          This record was marked as late by admin on {new Date(record.markedLateAt).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                   </div>
                   
