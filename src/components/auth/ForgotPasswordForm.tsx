@@ -14,17 +14,16 @@ interface ForgotPasswordFormProps {
 }
 
 const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBack }) => {
-  const [step, setStep] = useState<'email' | 'otp' | 'password'>('email');
+  const [step, setStep] = useState<'email' | 'password'>('email');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { sendOtp, resetPassword } = useAuth();
+  const { resetPassword } = useAuth();
   const { toast } = useToast();
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSendReset = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email) {
@@ -36,38 +35,24 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBack }) => {
       return;
     }
 
-    setLoading(true);
-    const success = await sendOtp(email);
-    setLoading(false);
-
-    if (success) {
-      setStep('otp');
-      toast({
-        title: "OTP Sent",
-        description: "OTP has been sent to admin number for verification.",
-      });
-    } else {
-      toast({
-        title: "Error",
-        description: "Failed to send OTP. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
+    // Check if user exists
+    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const userExists = users.find((u: any) => u.email === email);
     
-    if (!otp || otp.length !== 6) {
+    if (!userExists) {
       toast({
         title: "Error",
-        description: "Please enter a valid 6-digit OTP",
+        description: "No account found with this email address",
         variant: "destructive",
       });
       return;
     }
 
     setStep('password');
+    toast({
+      title: "User Verified",
+      description: "Please enter your new password.",
+    });
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -101,7 +86,7 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBack }) => {
     }
 
     setLoading(true);
-    const success = await resetPassword(email, newPassword, otp);
+    const success = await resetPassword(email, newPassword, '');
     setLoading(false);
 
     if (success) {
@@ -134,18 +119,16 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBack }) => {
             </div>
             <CardTitle className="text-2xl">
               {step === 'email' && 'Forgot Password'}
-              {step === 'otp' && 'Verify OTP'}
               {step === 'password' && 'Reset Password'}
             </CardTitle>
             <CardDescription>
-              {step === 'email' && 'Enter your email to receive OTP'}
-              {step === 'otp' && 'Enter the OTP sent to admin number'}
+              {step === 'email' && 'Enter your email to reset password'}
               {step === 'password' && 'Create your new password'}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {step === 'email' && (
-              <form onSubmit={handleSendOtp} className="space-y-4">
+              <form onSubmit={handleSendReset} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
@@ -166,32 +149,7 @@ const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBack }) => {
                   className="w-full bg-orange-600 hover:bg-orange-700 transition-colors"
                   disabled={loading}
                 >
-                  {loading ? 'Sending OTP...' : 'Send OTP'}
-                </Button>
-              </form>
-            )}
-
-            {step === 'otp' && (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="otp">6-Digit OTP</Label>
-                  <Input
-                    id="otp"
-                    type="text"
-                    placeholder="000000"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="text-center text-2xl tracking-widest"
-                    maxLength={6}
-                  />
-                </div>
-                
-                <Button 
-                  type="submit" 
-                  className="w-full bg-orange-600 hover:bg-orange-700 transition-colors"
-                  disabled={otp.length !== 6}
-                >
-                  Verify OTP
+                  {loading ? 'Verifying...' : 'Continue'}
                 </Button>
               </form>
             )}
