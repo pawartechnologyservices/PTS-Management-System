@@ -5,9 +5,9 @@ import { FolderOpen, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { toast } from '../ui/use-toast';
-import ProjectForm from './project/ProjectForm';
+import EnhancedProjectForm from './project/EnhancedProjectForm';
 import ProjectCard from './project/ProjectCard';
-import { sendNotificationToEmployee } from './project/ProjectNotificationService';
+import { useEnhancedProjectManagement } from '../../hooks/useEnhancedProjectManagement';
 
 interface Employee {
   id: string;
@@ -18,87 +18,43 @@ interface Employee {
   isActive: boolean;
 }
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  department: string;
-  assignedEmployees: string[];
-  startDate: string;
-  endDate: string;
-  priority: string;
-  status: string;
-  progress: number;
-  createdAt: string;
-  createdBy: string;
-}
-
 const ProjectManagement = () => {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const { projects, employees, addProject } = useEnhancedProjectManagement();
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     department: '',
+    assignedTeamLeader: '',
     assignedEmployees: [] as string[],
+    tasks: [] as any[],
     startDate: '',
     endDate: '',
     priority: 'medium',
     status: 'not_started'
   });
 
-  useEffect(() => {
-    const savedProjects = JSON.parse(localStorage.getItem('projects') || '[]');
-    setProjects(savedProjects);
-
-    const allUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const employeeUsers = allUsers.filter((user: Employee) => user.role === 'employee' && user.isActive);
-    setEmployees(employeeUsers);
-  }, []);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (formData.assignedEmployees.length === 0) {
+    if (formData.assignedEmployees.length === 0 && !formData.assignedTeamLeader) {
       toast({
         title: "Error",
-        description: "Please assign at least one employee to the project.",
+        description: "Please assign at least a team leader or employee to the project.",
         variant: "destructive"
       });
       return;
     }
 
-    const newProject = {
-      id: Date.now().toString(),
-      ...formData,
-      progress: 0,
-      createdAt: new Date().toISOString(),
-      createdBy: 'admin' // In real app, get from auth context
-    };
-
-    const updatedProjects = [...projects, newProject];
-    setProjects(updatedProjects);
-    localStorage.setItem('projects', JSON.stringify(updatedProjects));
-    
-    // Send notifications to assigned employees
-    formData.assignedEmployees.forEach(employeeId => {
-      const employee = employees.find(emp => emp.id === employeeId);
-      if (employee) {
-        sendNotificationToEmployee(employee, newProject);
-      }
-    });
-
-    toast({
-      title: "Project Created",
-      description: `Project "${newProject.name}" has been created and assigned to ${formData.assignedEmployees.length} employee(s).`
-    });
+    addProject(formData);
     
     setFormData({
       name: '',
       description: '',
       department: '',
+      assignedTeamLeader: '',
       assignedEmployees: [],
+      tasks: [],
       startDate: '',
       endDate: '',
       priority: 'medium',
@@ -115,8 +71,8 @@ const ProjectManagement = () => {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Project Management</h1>
-          <p className="text-gray-600">Create and manage company projects</p>
+          <h1 className="text-2xl font-bold text-gray-800">Enhanced Project Management</h1>
+          <p className="text-gray-600">Create and manage projects with team leaders and task assignments</p>
         </div>
         <Button onClick={() => setShowAddForm(true)}>
           <Plus className="h-4 w-4 mr-2" />
@@ -130,7 +86,7 @@ const ProjectManagement = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <ProjectForm
+          <EnhancedProjectForm
             formData={formData}
             setFormData={setFormData}
             employees={employees}
