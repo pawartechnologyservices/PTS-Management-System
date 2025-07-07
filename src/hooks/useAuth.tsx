@@ -23,7 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initializePredefinedAdmins();
   }, []);
 
-  const login = async (email: string, password: string, role: string, otp?: string): Promise<{ success: boolean; requiresOtp?: boolean; message?: string }> => {
+  const login = async (email: string, password: string, role: string): Promise<{ success: boolean; message?: string }> => {
     try {
       if (role === 'admin') {
         const adminUser = authenticateAdmin(email, password);
@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       if (role === 'employee') {
-        const result = await authenticateEmployee(email, password, otp);
+        const result = await authenticateEmployee(email, password);
         if (result.success && result.user) {
           setUser(result.user);
           localStorage.setItem('hrms_user', JSON.stringify(result.user));

@@ -4,23 +4,18 @@ import { motion } from 'framer-motion';
 import AdminLoginPage from './AdminLoginPage';
 import LoginCard from './LoginCard';
 import EmployeeRegistrationForm from './EmployeeRegistrationForm';
-import OtpVerificationForm from './OtpVerificationForm';
 import ForgotPasswordForm from './ForgotPasswordForm';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/use-toast';
 
 const EnhancedLoginPage = () => {
-  const [activeView, setActiveView] = useState<'main' | 'admin' | 'employee-register' | 'employee-otp' | 'forgot-password'>('main');
-  const [employeeEmail, setEmployeeEmail] = useState('');
-  const [employeePassword, setEmployeePassword] = useState('');
+  const [activeView, setActiveView] = useState<'main' | 'admin' | 'employee-register' | 'forgot-password'>('main');
   const [loading, setLoading] = useState(false);
-  const { login, sendOtp } = useAuth();
+  const { login } = useAuth();
   const { toast } = useToast();
 
   const handleEmployeeLogin = async (email: string, password: string) => {
     setLoading(true);
-    setEmployeeEmail(email);
-    setEmployeePassword(password);
     
     const result = await login(email, password, 'employee');
     
@@ -28,12 +23,6 @@ const EnhancedLoginPage = () => {
       toast({
         title: "Success",
         description: "Login successful!",
-      });
-    } else if (result.requiresOtp) {
-      setActiveView('employee-otp');
-      toast({
-        title: "OTP Sent",
-        description: result.message || "OTP has been sent for verification.",
       });
     } else {
       toast({
@@ -46,28 +35,6 @@ const EnhancedLoginPage = () => {
     setLoading(false);
   };
 
-  const handleOtpVerification = async (otp: string) => {
-    setLoading(true);
-    
-    const result = await login(employeeEmail, employeePassword, 'employee', otp);
-    
-    if (result.success) {
-      toast({
-        title: "Success",
-        description: "Login successful!",
-      });
-    } else {
-      toast({
-        title: "Error",
-        description: result.message || "OTP verification failed",
-        variant: "destructive",
-      });
-    }
-    
-    setLoading(false);
-    return result.success;
-  };
-
   if (activeView === 'admin') {
     return <AdminLoginPage onForgotPassword={() => setActiveView('forgot-password')} />;
   }
@@ -76,17 +43,6 @@ const EnhancedLoginPage = () => {
     return (
       <EmployeeRegistrationForm 
         onBack={() => setActiveView('main')} 
-      />
-    );
-  }
-
-  if (activeView === 'employee-otp') {
-    return (
-      <OtpVerificationForm
-        email={employeeEmail}
-        onVerify={handleOtpVerification}
-        onBack={() => setActiveView('main')}
-        loading={loading}
       />
     );
   }

@@ -1,3 +1,4 @@
+
 import { User } from '../types/auth';
 import { PREDEFINED_ADMINS } from '../constants/adminCredentials';
 import { verifyPassword, verifyAdminPassword, hashPassword } from '../utils/passwordUtils';
@@ -14,9 +15,8 @@ export const authenticateAdmin = (email: string, password: string): User | null 
 
 export const authenticateEmployee = async (
   email: string, 
-  password: string, 
-  otp?: string
-): Promise<{ success: boolean; requiresOtp?: boolean; message?: string; user?: User }> => {
+  password: string
+): Promise<{ success: boolean; message?: string; user?: User }> => {
   const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
   const foundUser = users.find((u: User) => u.email === email && u.role === 'employee');
   
@@ -32,38 +32,7 @@ export const authenticateEmployee = async (
     return { success: false, message: 'Invalid password' };
   }
   
-  // Check if first time login
-  if (foundUser.isFirstTimeLogin !== false) {
-    if (!otp) {
-      const generatedOtp = generateOtp();
-      const otpSent = await sendOtpToAdmin(generatedOtp, foundUser.name, foundUser.employeeId);
-      
-      if (otpSent) {
-        storeOtpData(email, generatedOtp);
-        return { success: false, requiresOtp: true, message: 'OTP sent to admin for verification' };
-      } else {
-        return { success: false, message: 'Failed to send OTP to admin' };
-      }
-    } else {
-      const storedOtpData = getStoredOtpData();
-      
-      if (storedOtpData?.email === email && 
-          storedOtpData.otp === otp && 
-          Date.now() < storedOtpData.expiresAt) {
-        
-        foundUser.isFirstTimeLogin = false;
-        const updatedUsers = users.map((u: User) => u.email === email ? foundUser : u);
-        localStorage.setItem('hrms_users', JSON.stringify(updatedUsers));
-        clearOtpData();
-        
-        return { success: true, user: foundUser };
-      } else {
-        return { success: false, message: 'Invalid or expired OTP' };
-      }
-    }
-  } else {
-    return { success: true, user: foundUser };
-  }
+  return { success: true, user: foundUser };
 };
 
 export const sendOtpForPasswordReset = async (email: string): Promise<boolean> => {

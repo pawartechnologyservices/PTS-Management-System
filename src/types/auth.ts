@@ -18,13 +18,12 @@ export interface User {
   updatedAt?: string;
   password?: string;
   profileImage?: string;
-  isFirstTimeLogin?: boolean;
   hashedPassword?: string;
 }
 
 export interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string, role: string, otp?: string) => Promise<{ success: boolean; requiresOtp?: boolean; message?: string }>;
+  login: (email: string, password: string, role: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   loading: boolean;
   sendOtp: (email: string) => Promise<boolean>;
