@@ -40,6 +40,7 @@ export interface ChatState {
   setSearchTerm: (term: string) => void;
   getMediaMessages: (chatId: string) => Message[];
   getChatId: (user1: string, user2: string) => string;
+  playNotificationSound: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -53,16 +54,25 @@ export const useChatStore = create<ChatState>()(
       searchTerm: '',
 
       addMessage: (chatId: string, message: Message) => {
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [chatId]: [...(state.messages[chatId] || []), message]
-          },
-          unreadCounts: {
-            ...state.unreadCounts,
-            [chatId]: state.currentChat === chatId ? 0 : (state.unreadCounts[chatId] || 0) + 1
+        set((state) => {
+          const newState = {
+            messages: {
+              ...state.messages,
+              [chatId]: [...(state.messages[chatId] || []), message]
+            },
+            unreadCounts: {
+              ...state.unreadCounts,
+              [chatId]: state.currentChat === chatId ? 0 : (state.unreadCounts[chatId] || 0) + 1
+            }
+          };
+          
+          // Play notification sound if not the current chat
+          if (state.currentChat !== chatId) {
+            get().playNotificationSound();
           }
-        }));
+          
+          return newState;
+        });
       },
 
       editMessage: (chatId: string, messageId: string, newContent: string) => {
@@ -142,6 +152,16 @@ export const useChatStore = create<ChatState>()(
 
       getChatId: (user1: string, user2: string) => {
         return [user1, user2].sort().join('_');
+      },
+
+      playNotificationSound: () => {
+        try {
+          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+PtwmYgBFqy4+Fzew==');
+          audio.volume = 0.3;
+          audio.play().catch(() => {});
+        } catch (error) {
+          console.log('Could not play notification sound:', error);
+        }
       }
     }),
     {

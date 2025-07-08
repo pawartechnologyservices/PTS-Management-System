@@ -25,34 +25,40 @@ const ChatInterface = () => {
     setOnlineUsers,
     setTypingUser,
     setCurrentChat,
-    getChatId
+    getChatId,
+    playNotificationSound
   } = useChatStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Initialize online users (simulate some users being online)
+  // Initialize online users and simulate real-time presence
   useEffect(() => {
     const allUsers = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const randomOnlineUsers = allUsers
-      .filter((u: any) => u.id !== user?.id)
-      .slice(0, Math.floor(Math.random() * 3) + 1)
+    const otherUsers = allUsers.filter((u: any) => u.id !== user?.id);
+    
+    // Initially set some users as online
+    const initialOnlineUsers = otherUsers
+      .slice(0, Math.floor(Math.random() * otherUsers.length / 2) + 1)
       .map((u: any) => u.id);
     
-    setOnlineUsers(randomOnlineUsers);
+    setOnlineUsers(initialOnlineUsers);
     
-    // Simulate users going online/offline
-    const interval = setInterval(() => {
-      const onlineCount = Math.floor(Math.random() * allUsers.length / 2) + 1;
-      const shuffled = allUsers.filter((u: any) => u.id !== user?.id).sort(() => 0.5 - Math.random());
+    // Simulate users going online/offline every 30 seconds
+    const presenceInterval = setInterval(() => {
+      const onlineCount = Math.floor(Math.random() * otherUsers.length / 2) + 1;
+      const shuffled = [...otherUsers].sort(() => 0.5 - Math.random());
       setOnlineUsers(shuffled.slice(0, onlineCount).map((u: any) => u.id));
-    }, 30000); // Change every 30 seconds
+    }, 30000);
 
-    return () => clearInterval(interval);
+    return () => clearInterval(presenceInterval);
   }, [user?.id, setOnlineUsers]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, currentChat]);
 
   // Handle user selection
@@ -62,7 +68,7 @@ const ChatInterface = () => {
     setCurrentChat(chatId);
   };
 
-  // Send message
+  // Send message with improved delivery simulation
   const sendMessage = (content: string, type: 'text' | 'image' | 'video' = 'text') => {
     if (!selectedUser || !user) return;
 
@@ -79,26 +85,68 @@ const ChatInterface = () => {
     };
 
     addMessage(chatId, newMessage);
-    playNotificationSound();
 
-    // Simulate message delivery and read status
+    // Simulate realistic message delivery statuses
     setTimeout(() => {
+      const updatedMessage = { ...newMessage, status: 'delivered' as const };
       editMessage(chatId, newMessage.id, content);
-      // Update status to delivered then read
+      
+      // Simulate read status after a delay
       setTimeout(() => {
-        const updatedMessage = { ...newMessage, status: 'delivered' as const };
-        setTimeout(() => {
-          const readMessage = { ...updatedMessage, status: 'read' as const };
-        }, 1000);
-      }, 500);
-    }, 100);
+        const readMessage = { ...updatedMessage, status: 'read' as const };
+        editMessage(chatId, newMessage.id, content);
+      }, Math.random() * 3000 + 1000); // 1-4 seconds delay
+    }, Math.random() * 1000 + 500); // 0.5-1.5 seconds delay
+
+    // Simulate auto-reply for demo purposes (optional)
+    if (Math.random() > 0.7) { // 30% chance of auto-reply
+      setTimeout(() => {
+        const autoReply = {
+          id: (Date.now() + 1).toString(),
+          senderId: selectedUser.id,
+          receiverId: user.id,
+          content: getAutoReply(content),
+          type: 'text' as const,
+          timestamp: new Date(),
+          status: 'delivered' as const
+        };
+        addMessage(chatId, autoReply);
+      }, Math.random() * 5000 + 2000); // 2-7 seconds delay
+    }
   };
 
-  // Handle typing
+  // Simple auto-reply generator for demo
+  const getAutoReply = (originalMessage: string): string => {
+    const replies = [
+      "Thanks for your message!",
+      "I'll get back to you on this.",
+      "Understood, will handle it.",
+      "Got it, thanks!",
+      "Let me check and respond.",
+      "Received, working on it.",
+      "Okay, I'll take care of this."
+    ];
+    return replies[Math.floor(Math.random() * replies.length)];
+  };
+
+  // Handle typing with debounce
   const handleTyping = (isTyping: boolean) => {
     if (!selectedUser || !user) return;
+    
     const chatId = getChatId(user.id, selectedUser.id);
     setTypingUser(chatId, user.id, isTyping);
+
+    if (isTyping) {
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set typing to false after 3 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        setTypingUser(chatId, user.id, false);
+      }, 3000);
+    }
   };
 
   // Edit message
@@ -106,6 +154,11 @@ const ChatInterface = () => {
     if (!selectedUser || !user) return;
     const chatId = getChatId(user.id, selectedUser.id);
     editMessage(chatId, messageId, newContent);
+    
+    toast({
+      title: "Message edited",
+      description: "Your message has been updated.",
+    });
   };
 
   // Delete message
@@ -113,12 +166,11 @@ const ChatInterface = () => {
     if (!selectedUser || !user) return;
     const chatId = getChatId(user.id, selectedUser.id);
     deleteMessage(chatId, messageId, deleteForEveryone);
-  };
-
-  const playNotificationSound = () => {
-    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+PtwmYgBFqy4+Fzew==');
-    audio.volume = 0.1;
-    audio.play().catch(() => {});
+    
+    toast({
+      title: deleteForEveryone ? "Message deleted for everyone" : "Message deleted",
+      description: deleteForEveryone ? "This message was removed for all participants." : "Message was removed for you.",
+    });
   };
 
   const getCurrentChatMessages = () => {
@@ -130,7 +182,7 @@ const ChatInterface = () => {
   const getCurrentTypingUsers = () => {
     if (!selectedUser || !user) return [];
     const chatId = getChatId(user.id, selectedUser.id);
-    return typingUsers[chatId] || [];
+    return (typingUsers[chatId] || []).filter(id => id !== user.id);
   };
 
   return (
@@ -165,16 +217,22 @@ const ChatInterface = () => {
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 bg-gray-50">
-            <div className="text-center">
-              <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4 mx-auto">
-                <span className="text-4xl">💬</span>
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center"
+            >
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-green-100 rounded-full flex items-center justify-center mb-6 mx-auto">
+                <span className="text-6xl">💬</span>
               </div>
-              <h3 className="text-lg font-medium mb-2 text-gray-700">WhatsApp Web</h3>
-              <p className="text-gray-500 max-w-sm">
-                Send and receive messages without keeping your phone online.<br />
-                Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
+              <h3 className="text-xl font-semibold mb-3 text-gray-700">
+                {user?.role === 'admin' ? 'Admin Chat Panel' : 'Employee Communication'}
+              </h3>
+              <p className="text-gray-500 max-w-sm leading-relaxed">
+                Select a contact from the sidebar to start a conversation.<br />
+                Stay connected with your team through instant messaging.
               </p>
-            </div>
+            </motion.div>
           </div>
         )}
       </div>
