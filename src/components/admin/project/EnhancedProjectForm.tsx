@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -8,6 +7,7 @@ import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Badge } from '../../ui/badge';
 import { X, Plus } from 'lucide-react';
+import { Task } from '../../../types/project';
 
 interface Employee {
   id: string;
@@ -16,16 +16,6 @@ interface Employee {
   designation: string;
   role: string;
   isActive: boolean;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  assignedTo: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'low' | 'medium' | 'high';
-  dueDate: string;
 }
 
 interface ProjectFormData {
