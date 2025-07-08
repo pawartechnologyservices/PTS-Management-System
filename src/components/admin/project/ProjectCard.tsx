@@ -56,6 +56,8 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, employees, index, on
     const updatedProject = {
       ...project,
       ...editData,
+      priority: editData.priority as 'low' | 'medium' | 'high' | 'urgent',
+      status: editData.status as 'not_started' | 'in_progress' | 'on_hold' | 'completed',
       lastUpdated: new Date().toISOString()
     };
     
@@ -133,7 +135,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, employees, index, on
                       onChange={(e) => setEditData({...editData, description: e.target.value})}
                     />
                     <div className="grid grid-cols-2 gap-2">
-                      <Select value={editData.priority} onValueChange={(value) => setEditData({...editData, priority: value})}>
+                      <Select value={editData.priority} onValueChange={(value: 'low' | 'medium' | 'high' | 'urgent') => setEditData({...editData, priority: value})}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -144,7 +146,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, employees, index, on
                           <SelectItem value="urgent">Urgent</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Select value={editData.status} onValueChange={(value) => setEditData({...editData, status: value})}>
+                      <Select value={editData.status} onValueChange={(value: 'not_started' | 'in_progress' | 'on_hold' | 'completed') => setEditData({...editData, status: value})}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
