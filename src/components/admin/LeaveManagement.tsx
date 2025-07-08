@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plane, Check, X, Clock, Filter } from 'lucide-react';
+import { Plane, Check, X, Clock, Filter, RotateCcw, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -57,6 +57,35 @@ const LeaveManagement = () => {
       description: "Leave request has been rejected.",
       variant: "destructive"
     });
+  };
+
+  const handleReapprove = (requestId) => {
+    const updatedRequests = leaveRequests.map(request => 
+      request.id === requestId 
+        ? { ...request, status: 'pending', reappliedAt: new Date().toISOString() }
+        : request
+    );
+    
+    setLeaveRequests(updatedRequests);
+    localStorage.setItem('leave_requests', JSON.stringify(updatedRequests));
+    
+    toast({
+      title: "Leave Re-opened",
+      description: "Leave request has been re-opened for approval"
+    });
+  };
+
+  const handleDelete = (requestId) => {
+    if (window.confirm('Are you sure you want to delete this leave request?')) {
+      const updatedRequests = leaveRequests.filter(request => request.id !== requestId);
+      setLeaveRequests(updatedRequests);
+      localStorage.setItem('leave_requests', JSON.stringify(updatedRequests));
+      
+      toast({
+        title: "Leave Request Deleted",
+        description: "Leave request has been deleted successfully"
+      });
+    }
   };
 
   const getStatusColor = (status) => {
@@ -177,27 +206,48 @@ const LeaveManagement = () => {
                       </div>
                     </div>
                     
-                    {request.status === 'pending' && (
-                      <div className="flex gap-2 ml-4">
-                        <Button
-                          size="sm"
-                          onClick={() => handleApprove(request.id)}
-                          className="bg-green-600 hover:bg-green-700"
-                        >
-                          <Check className="h-3 w-3 mr-1" />
-                          Approve
-                        </Button>
+                    <div className="flex gap-2 ml-4">
+                      {request.status === 'pending' && (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => handleApprove(request.id)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <Check className="h-3 w-3 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReject(request.id)}
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                      {(request.status === 'approved' || request.status === 'rejected') && (
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleReject(request.id)}
-                          className="border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={() => handleReapprove(request.id)}
+                          className="text-blue-600 hover:bg-blue-50"
                         >
-                          <X className="h-3 w-3 mr-1" />
-                          Reject
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Re-open
                         </Button>
-                      </div>
-                    )}
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDelete(request.id)}
+                        className="text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
               ))}

@@ -21,6 +21,7 @@ interface Employee {
 const ProjectManagement = () => {
   const { projects, employees, addProject } = useEnhancedProjectManagement();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [localProjects, setLocalProjects] = useState(projects);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -33,6 +34,10 @@ const ProjectManagement = () => {
     priority: 'medium',
     status: 'not_started'
   });
+
+  useEffect(() => {
+    setLocalProjects(projects);
+  }, [projects]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +66,16 @@ const ProjectManagement = () => {
       status: 'not_started'
     });
     setShowAddForm(false);
+  };
+
+  const handleEdit = (updatedProject: any) => {
+    setLocalProjects(prev => 
+      prev.map(p => p.id === updatedProject.id ? updatedProject : p)
+    );
+  };
+
+  const handleDelete = (projectId: string) => {
+    setLocalProjects(prev => prev.filter(p => p.id !== projectId));
   };
 
   return (
@@ -105,21 +120,23 @@ const ProjectManagement = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4" />
-              Projects ({projects.length})
+              Projects ({localProjects.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {projects.map((project, index) => (
+              {localProjects.map((project, index) => (
                 <ProjectCard
                   key={project.id}
                   project={project}
                   employees={employees}
                   index={index}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
                 />
               ))}
             </div>
-            {projects.length === 0 && (
+            {localProjects.length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 No projects created yet
               </div>

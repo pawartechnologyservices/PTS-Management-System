@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CreditCard, Download, Send, Upload, Users, FileText, Settings } from 'lucide-react';
+import { CreditCard, Download, Send, Upload, Users, FileText, Settings, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../ui/badge';
 import { toast } from '../ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Label } from '../ui/label';
 import SalaryTemplateCreator from './SalaryTemplateCreator';
 import { generateSalarySlipPDF } from '../../utils/pdfGenerator';
 
@@ -16,6 +18,12 @@ const SalaryManagement = () => {
   const [salarySlips, setSalarySlips] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [editingSlip, setEditingSlip] = useState(null);
+  const [editData, setEditData] = useState({
+    basicSalary: 0,
+    allowances: 0,
+    deductions: 0
+  });
 
   useEffect(() => {
     const employeeData = JSON.parse(localStorage.getItem('hrms_users') || '[]');
@@ -116,6 +124,46 @@ const SalaryManagement = () => {
     });
   };
 
+  const editSalarySlip = (slip) => {
+    setEditingSlip(slip);
+    setEditData({
+      basicSalary: slip.basicSalary,
+      allowances: slip.allowances,
+      deductions: slip.deductions
+    });
+  };
+
+  const handleEditSave = () => {
+    const netSalary = editData.basicSalary + editData.allowances - editData.deductions;
+    const updatedSlips = salarySlips.map(slip => 
+      slip.id === editingSlip.id 
+        ? { ...slip, ...editData, netSalary, lastUpdated: new Date().toISOString() }
+        : slip
+    );
+    
+    setSalarySlips(updatedSlips);
+    localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
+    setEditingSlip(null);
+    
+    toast({
+      title: "Salary Slip Updated",
+      description: "Salary slip has been updated successfully"
+    });
+  };
+
+  const deleteSalarySlip = (slipId) => {
+    if (window.confirm('Are you sure you want to delete this salary slip?')) {
+      const updatedSlips = salarySlips.filter(slip => slip.id !== slipId);
+      setSalarySlips(updatedSlips);
+      localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
+      
+      toast({
+        title: "Salary Slip Deleted",
+        description: "Salary slip has been deleted successfully"
+      });
+    }
+  };
+
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
@@ -151,7 +199,6 @@ const SalaryManagement = () => {
         </TabsList>
 
         <TabsContent value="manage" className="space-y-6">
-          {/* Month/Year Selection */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -187,7 +234,6 @@ const SalaryManagement = () => {
             </Card>
           </motion.div>
 
-          {/* Employee List for Salary Generation */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -238,7 +284,6 @@ const SalaryManagement = () => {
             </Card>
           </motion.div>
 
-          {/* Generated Salary Slips */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -275,6 +320,53 @@ const SalaryManagement = () => {
                         </p>
                       </div>
                       <div className="flex gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => editSalarySlip(slip)}
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Edit Salary Slip - {slip.employeeName}</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div>
+                                <Label>Basic Salary</Label>
+                                <Input
+                                  type="number"
+                                  value={editData.basicSalary}
+                                  onChange={(e) => setEditData({...editData, basicSalary: parseInt(e.target.value)})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Allowances</Label>
+                                <Input
+                                  type="number"
+                                  value={editData.allowances}
+                                  onChange={(e) => setEditData({...editData, allowances: parseInt(e.target.value)})}
+                                />
+                              </div>
+                              <div>
+                                <Label>Deductions</Label>
+                                <Input
+                                  type="number"
+                                  value={editData.deductions}
+                                  onChange={(e) => setEditData({...editData, deductions: parseInt(e.target.value)})}
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button onClick={handleEditSave} className="flex-1">Save</Button>
+                                <Button variant="outline" onClick={() => setEditingSlip(null)} className="flex-1">Cancel</Button>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                         <Button 
                           size="sm" 
                           variant="outline"
@@ -290,6 +382,14 @@ const SalaryManagement = () => {
                         >
                           <Send className="h-3 w-3 mr-1" />
                           {slip.status === 'sent' ? 'Sent' : 'Send'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => deleteSalarySlip(slip.id)}
+                          className="text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
                     </motion.div>

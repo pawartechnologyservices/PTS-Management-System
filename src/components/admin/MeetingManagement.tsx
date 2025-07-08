@@ -1,17 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Plus, Users, Video, Clock } from 'lucide-react';
+import { Calendar, Plus, Users, Video, Clock, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { toast } from '../ui/use-toast';
 
 const MeetingManagement = () => {
   const [meetings, setMeetings] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -33,17 +36,45 @@ const MeetingManagement = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const newMeeting = {
-      id: Date.now().toString(),
-      ...formData,
-      createdAt: new Date().toISOString(),
-      status: 'scheduled'
-    };
+    if (editingMeeting) {
+      // Update existing meeting
+      const updatedMeetings = meetings.map(meeting =>
+        meeting.id === editingMeeting.id
+          ? { ...meeting, ...formData, lastUpdated: new Date().toISOString() }
+          : meeting
+      );
+      setMeetings(updatedMeetings);
+      localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+      setEditingMeeting(null);
+      
+      toast({
+        title: "Meeting Updated",
+        description: "Meeting has been updated successfully"
+      });
+    } else {
+      // Create new meeting
+      const newMeeting = {
+        id: Date.now().toString(),
+        ...formData,
+        createdAt: new Date().toISOString(),
+        status: 'scheduled'
+      };
 
-    const updatedMeetings = [...meetings, newMeeting];
-    setMeetings(updatedMeetings);
-    localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+      const updatedMeetings = [...meetings, newMeeting];
+      setMeetings(updatedMeetings);
+      localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+      
+      toast({
+        title: "Meeting Scheduled",
+        description: "Meeting has been scheduled successfully"
+      });
+    }
     
+    resetForm();
+    setShowAddForm(false);
+  };
+
+  const resetForm = () => {
     setFormData({
       title: '',
       description: '',
@@ -55,7 +86,35 @@ const MeetingManagement = () => {
       meetingLink: '',
       agenda: ''
     });
-    setShowAddForm(false);
+  };
+
+  const editMeeting = (meeting) => {
+    setEditingMeeting(meeting);
+    setFormData({
+      title: meeting.title,
+      description: meeting.description,
+      date: meeting.date,
+      time: meeting.time,
+      duration: meeting.duration,
+      type: meeting.type,
+      department: meeting.department || '',
+      meetingLink: meeting.meetingLink || '',
+      agenda: meeting.agenda || ''
+    });
+    setShowAddForm(true);
+  };
+
+  const deleteMeeting = (meetingId) => {
+    if (window.confirm('Are you sure you want to delete this meeting?')) {
+      const updatedMeetings = meetings.filter(meeting => meeting.id !== meetingId);
+      setMeetings(updatedMeetings);
+      localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+      
+      toast({
+        title: "Meeting Deleted",
+        description: "Meeting has been deleted successfully"
+      });
+    }
   };
 
   const getTypeColor = (type) => {
@@ -87,7 +146,9 @@ const MeetingManagement = () => {
         >
           <Card>
             <CardHeader>
-              <CardTitle>Schedule New Meeting</CardTitle>
+              <CardTitle>
+                {editingMeeting ? 'Edit Meeting' : 'Schedule New Meeting'}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -163,8 +224,18 @@ const MeetingManagement = () => {
                 />
 
                 <div className="flex gap-2">
-                  <Button type="submit">Schedule Meeting</Button>
-                  <Button type="button" variant="outline" onClick={() => setShowAddForm(false)}>
+                  <Button type="submit">
+                    {editingMeeting ? 'Update Meeting' : 'Schedule Meeting'}
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setEditingMeeting(null);
+                      resetForm();
+                    }}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -228,13 +299,32 @@ const MeetingManagement = () => {
                         </div>
                       )}
                     </div>
-                    {meeting.meetingLink && (
-                      <Button size="sm" variant="outline" asChild>
-                        <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
-                          Join
-                        </a>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => editMeeting(meeting)}
+                      >
+                        <Edit className="h-3 w-3 mr-1" />
+                        Edit
                       </Button>
-                    )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => deleteMeeting(meeting.id)}
+                        className="text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Delete
+                      </Button>
+                      {meeting.meetingLink && (
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
+                            Join
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               ))}

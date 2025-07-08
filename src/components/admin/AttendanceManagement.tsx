@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle } from 'lucide-react';
+import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -60,6 +59,19 @@ const AttendanceManagement = () => {
       title: "Success",
       description: "Employee marked as late successfully",
     });
+  };
+
+  const deleteAttendanceRecord = (recordId: string) => {
+    if (window.confirm('Are you sure you want to delete this attendance record?')) {
+      const updatedRecords = attendanceRecords.filter(record => record.id !== recordId);
+      setAttendanceRecords(updatedRecords);
+      localStorage.setItem('attendance_records', JSON.stringify(updatedRecords));
+      
+      toast({
+        title: "Record Deleted",
+        description: "Attendance record has been deleted successfully",
+      });
+    }
   };
 
   const getStatusColor = (status) => {
@@ -229,17 +241,27 @@ const AttendanceManagement = () => {
                         </Badge>
                       </td>
                       <td className="p-3">
-                        {record.status !== 'late' && record.status !== 'absent' && (
+                        <div className="flex gap-1">
+                          {record.status !== 'late' && record.status !== 'absent' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => markAsLate(record.id)}
+                              className="text-yellow-600 hover:text-yellow-700"
+                            >
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              Mark Late
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => markAsLate(record.id)}
-                            className="text-yellow-600 hover:text-yellow-700"
+                            onClick={() => deleteAttendanceRecord(record.id)}
+                            className="text-red-600 hover:text-red-700"
                           >
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            Mark Late
+                            <Trash2 className="h-3 w-3" />
                           </Button>
-                        )}
+                        </div>
                       </td>
                     </motion.tr>
                   ))}
