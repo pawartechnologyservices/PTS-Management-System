@@ -66,7 +66,7 @@ export class SMSService {
   }
 
   static async sendOTPNotification(adminPhone: string, employeeName: string, employeeId: string, otp: string): Promise<boolean> {
-    const message = `🔐 HRMS OTP Alert\n\nEmployee: ${employeeName}\nID: ${employeeId}\nOTP: ${otp}\n\nUse this OTP to approve employee access.\n\nExpires in 5 minutes.`;
+    const message = `🔐 PTS System OTP Alert\n\nEmployee: ${employeeName}\nID: ${employeeId}\nOTP: ${otp}\n\nUse this OTP to approve employee access.\n\nExpires in 5 minutes.`;
     
     return await this.sendSMS({
       to: adminPhone,

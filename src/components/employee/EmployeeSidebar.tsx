@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -13,7 +12,8 @@ import {
   Receipt, 
   FileText,
   X,
-  Building2
+  Building2,
+  MessageCircle // Added the MessageCircle icon
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../hooks/useAuth';
@@ -30,6 +30,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/employee/' },
     { icon: User, label: 'My Info', path: '/employee/info' },
     { icon: Clock, label: 'Attendance', path: '/employee/attendance' },
+    { icon: MessageCircle, label: 'Chat', path: '/employee/chat' }, 
     { icon: Calendar, label: 'Meetings', path: '/employee/meetings' },
     { icon: FolderOpen, label: 'Projects', path: '/employee/projects' },
     ...(user?.department === 'Digital Marketing' ? [
@@ -114,7 +115,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
       {/* Footer */}
       <div className="p-4 border-t border-gray-200">
         <div className="text-xs text-gray-500 text-center">
-          © 2024 HRMS System
+          © 2024 PTS System
         </div>
       </div>
     </div>

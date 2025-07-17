@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -14,7 +13,8 @@ import {
   Receipt, 
   Settings,
   X,
-  Building2
+  Building2,
+  MessageCircle
 } from 'lucide-react';
 import { Button } from '../ui/button';
 
@@ -32,6 +32,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ onClose }) => {
     { icon: Calendar, label: 'Meetings', path: '/admin/meetings' },
     { icon: FolderOpen, label: 'Projects', path: '/admin/projects' },
     { icon: Plane, label: 'Leaves', path: '/admin/leaves' },
+    { icon: MessageCircle, label: 'Chat', path: '/admin/chat' },
     { icon: CreditCard, label: 'Salary Management', path: '/admin/salary' },
     { icon: FileText, label: 'Reports', path: '/admin/reports' },
     { icon: Receipt, label: 'Expenses Management', path: '/admin/expenses' },
@@ -98,7 +99,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ onClose }) => {
       {/* Footer */}
       <div className="p-4 border-t border-gray-200">
         <div className="text-xs text-gray-500 text-center">
-          © 2024 HRMS System
+          © 2025 PTS System
         </div>
       </div>
     </div>

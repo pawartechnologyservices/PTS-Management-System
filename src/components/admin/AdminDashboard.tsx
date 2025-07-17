@@ -10,6 +10,7 @@ import AttendanceManagement from './AttendanceManagement';
 import MeetingManagement from './MeetingManagement';
 import ProjectManagement from './ProjectManagement';
 import LeaveManagement from './LeaveManagement';
+import ChatManagement from './ChatManagement';
 import SalaryManagement from './SalaryManagement';
 import ReportsManagement from './ReportsManagement';
 import ExpenseManagement from './ExpenseManagement';
@@ -85,6 +86,7 @@ const AdminDashboard = () => {
               <Route path="/meetings" element={<MeetingManagement />} />
               <Route path="/projects" element={<ProjectManagement />} />
               <Route path="/leaves" element={<LeaveManagement />} />
+              <Route path="/admin/chat" element={<ChatManagement />} />
               <Route path="/salary" element={<SalaryManagement />} />
               <Route path="/reports" element={<ReportsManagement />} />
               <Route path="/expenses" element={<ExpenseManagement />} />

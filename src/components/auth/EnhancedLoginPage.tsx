@@ -70,7 +70,7 @@ const EnhancedLoginPage = () => {
             transition={{ delay: 0.2 }}
             className="text-4xl font-bold text-gray-900 mb-2"
           >
-            HRMS Portal
+            PTS Portal
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -78,7 +78,7 @@ const EnhancedLoginPage = () => {
             transition={{ delay: 0.4 }}
             className="text-gray-600"
           >
-            Human Resource Management System
+            Pawar Technology Services Management System
           </motion.p>
         </div>
 

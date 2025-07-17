@@ -39,7 +39,8 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
     'Sales',
     'Product Designing',
     'Web Development',
-    'Graphic Designing'
+    'Graphic Designing',
+    'AI (Artificial Intelligenc)',
   ];
 
   const designations = [
@@ -49,7 +50,8 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
     'Marketing Executive',
     'Sales Executive',
     'Designer',
-    'Manager'
+    'Manager',
+    'Traine'
   ];
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

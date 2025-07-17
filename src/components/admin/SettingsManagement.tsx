@@ -12,10 +12,10 @@ import { toast } from '../ui/use-toast';
 
 const SettingsManagement = () => {
   const [companySettings, setCompanySettings] = useState({
-    companyName: 'HRMS System',
-    companyEmail: 'admin@hrms.com',
-    companyPhone: '+91 9999999999',
-    companyAddress: 'Mumbai, India',
+    companyName: 'PTS System',
+    companyEmail: 'pawartechnologyservices@gmail.com',
+    companyPhone: '+91 9096649556',
+    companyAddress: 'Pune, India',
     workingHours: '9:00 AM - 6:00 PM',
     weeklyHours: 40,
     leavePolicyUrl: ''

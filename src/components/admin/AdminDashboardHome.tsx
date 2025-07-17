@@ -86,7 +86,7 @@ const AdminDashboardHome = () => {
       {
         id: 'proj_3',
         title: 'HR Process Automation',
-        description: 'Automate HR processes using new HRMS system',
+        description: 'Automate HR processes using new PTS system',
         startDate: '2024-02-01',
         endDate: '2024-04-30',
         department: 'HR',

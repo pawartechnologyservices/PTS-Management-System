@@ -19,10 +19,17 @@ const SalaryManagement = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [editingSlip, setEditingSlip] = useState(null);
+  const [editingEmployee, setEditingEmployee] = useState(null);
   const [editData, setEditData] = useState({
     basicSalary: 0,
     allowances: 0,
     deductions: 0
+  });
+  const [employeeEditData, setEmployeeEditData] = useState({
+    name: '',
+    designation: '',
+    basicSalary: 0,
+    customSalary: false
   });
 
   useEffect(() => {
@@ -35,7 +42,13 @@ const SalaryManagement = () => {
   }, []);
 
   const generateSalarySlip = (employee) => {
-    const basicSalary = getBasicSalary(employee.designation);
+    let basicSalary;
+    if (employee.customSalary) {
+      basicSalary = employee.basicSalary;
+    } else {
+      basicSalary = getBasicSalary(employee.designation);
+    }
+    
     const allowances = basicSalary * 0.3;
     const deductions = basicSalary * 0.12;
     const netSalary = basicSalary + allowances - deductions;
@@ -133,6 +146,54 @@ const SalaryManagement = () => {
     });
   };
 
+  const editEmployeeData = (employee) => {
+    setEditingEmployee(employee);
+    setEmployeeEditData({
+      name: employee.name,
+      designation: employee.designation,
+      basicSalary: employee.customSalary ? employee.basicSalary : getBasicSalary(employee.designation),
+      customSalary: employee.customSalary || false
+    });
+  };
+
+  const handleEmployeeEditSave = () => {
+    const updatedEmployees = employees.map(emp => 
+      emp.employeeId === editingEmployee.employeeId 
+        ? { 
+            ...emp, 
+            name: employeeEditData.name, 
+            designation: employeeEditData.designation,
+            basicSalary: employeeEditData.customSalary ? employeeEditData.basicSalary : getBasicSalary(employeeEditData.designation),
+            customSalary: employeeEditData.customSalary
+          }
+        : emp
+    );
+    
+    setEmployees(updatedEmployees);
+    
+    // Update in localStorage if needed
+    const allEmployees = JSON.parse(localStorage.getItem('hrms_users') || '[]');
+    const updatedAllEmployees = allEmployees.map(emp => 
+      emp.employeeId === editingEmployee.employeeId 
+        ? { 
+            ...emp, 
+            name: employeeEditData.name, 
+            designation: employeeEditData.designation,
+            basicSalary: employeeEditData.customSalary ? employeeEditData.basicSalary : getBasicSalary(employeeEditData.designation),
+            customSalary: employeeEditData.customSalary
+          }
+        : emp
+    );
+    localStorage.setItem('hrms_users', JSON.stringify(updatedAllEmployees));
+    
+    setEditingEmployee(null);
+    
+    toast({
+      title: "Employee Data Updated",
+      description: "Employee information has been updated successfully"
+    });
+  };
+
   const handleEditSave = () => {
     const netSalary = editData.basicSalary + editData.allowances - editData.deductions;
     const updatedSlips = salarySlips.map(slip => 
@@ -162,6 +223,14 @@ const SalaryManagement = () => {
         description: "Salary slip has been deleted successfully"
       });
     }
+  };
+
+  const toggleCustomSalary = () => {
+    setEmployeeEditData(prev => ({
+      ...prev,
+      customSalary: !prev.customSalary,
+      basicSalary: !prev.customSalary ? prev.basicSalary : getBasicSalary(prev.designation)
+    }));
   };
 
   const months = [
@@ -250,7 +319,7 @@ const SalaryManagement = () => {
                 <div className="space-y-4">
                   {employees.map((employee, index) => {
                     const hasSlip = currentMonthSlips.some(slip => slip.employeeId === employee.employeeId);
-                    const basicSalary = getBasicSalary(employee.designation);
+                    const basicSalary = employee.customSalary ? employee.basicSalary : getBasicSalary(employee.designation);
                     
                     return (
                       <motion.div
@@ -264,18 +333,92 @@ const SalaryManagement = () => {
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold">{employee.name}</h3>
                             {hasSlip && <Badge className="bg-green-100 text-green-700">Generated</Badge>}
+                            {employee.customSalary && <Badge className="bg-purple-100 text-purple-700">Custom Salary</Badge>}
                           </div>
                           <p className="text-sm text-gray-600">{employee.employeeId} • {employee.designation}</p>
                           <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(basicSalary)}</p>
                         </div>
-                        <Button
-                          onClick={() => generateSalarySlip(employee)}
-                          disabled={hasSlip}
-                          size="sm"
-                        >
-                          <CreditCard className="h-3 w-3 mr-1" />
-                          {hasSlip ? 'Generated' : 'Generate'}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => editEmployeeData(employee)}
+                              >
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Edit Employee Data - {employee.name}</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div>
+                                  <Label>Employee Name</Label>
+                                  <Input
+                                    value={employeeEditData.name}
+                                    onChange={(e) => setEmployeeEditData({...employeeEditData, name: e.target.value})}
+                                  />
+                                </div>
+                                <div>
+                                  <Label>Designation</Label>
+                                  <Select 
+                                    value={employeeEditData.designation}
+                                    onValueChange={(value) => setEmployeeEditData({...employeeEditData, designation: value})}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select designation" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Software Developer">Software Developer</SelectItem>
+                                      <SelectItem value="Digital Marketing Executive">Digital Marketing Executive</SelectItem>
+                                      <SelectItem value="Sales Executive">Sales Executive</SelectItem>
+                                      <SelectItem value="Product Designer">Product Designer</SelectItem>
+                                      <SelectItem value="Web Developer">Web Developer</SelectItem>
+                                      <SelectItem value="Graphic Designer">Graphic Designer</SelectItem>
+                                      <SelectItem value="Manager">Manager</SelectItem>
+                                      <SelectItem value="Team Lead">Team Lead</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1">
+                                    <Label>Basic Salary</Label>
+                                    <Input
+                                      type="number"
+                                      value={employeeEditData.basicSalary}
+                                      onChange={(e) => setEmployeeEditData({...employeeEditData, basicSalary: parseInt(e.target.value)})}
+                                      disabled={!employeeEditData.customSalary}
+                                    />
+                                  </div>
+                                  <div className="pt-7">
+                                    <Button 
+                                      variant={employeeEditData.customSalary ? "default" : "outline"}
+                                      onClick={toggleCustomSalary}
+                                      size="sm"
+                                    >
+                                      {employeeEditData.customSalary ? 'Custom' : 'Default'}
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button onClick={handleEmployeeEditSave} className="flex-1">Save</Button>
+                                  <Button variant="outline" onClick={() => setEditingEmployee(null)} className="flex-1">Cancel</Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <Button
+                            onClick={() => generateSalarySlip(employee)}
+                            disabled={hasSlip}
+                            size="sm"
+                          >
+                            <CreditCard className="h-3 w-3 mr-1" />
+                            {hasSlip ? 'Generated' : 'Generate'}
+                          </Button>
+                        </div>
                       </motion.div>
                     );
                   })}
