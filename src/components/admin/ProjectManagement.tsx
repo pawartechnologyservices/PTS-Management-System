@@ -1,13 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FolderOpen, Plus } from 'lucide-react';
+import { FolderOpen, Plus, List, Grid } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { toast } from '../ui/use-toast';
 import EnhancedProjectForm from './project/EnhancedProjectForm';
 import ProjectCard from './project/ProjectCard';
+import ProjectListItem from './project/ProjectListItem';
 import { useEnhancedProjectManagement } from '../../hooks/useEnhancedProjectManagement';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
 interface Employee {
   id: string;
@@ -22,6 +23,7 @@ const ProjectManagement = () => {
   const { projects, employees, addProject } = useEnhancedProjectManagement();
   const [showAddForm, setShowAddForm] = useState(false);
   const [localProjects, setLocalProjects] = useState(projects);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -89,10 +91,28 @@ const ProjectManagement = () => {
           <h1 className="text-2xl font-bold text-gray-800">Enhanced Project Management</h1>
           <p className="text-gray-600">Create and manage projects with team leaders and task assignments</p>
         </div>
-        <Button onClick={() => setShowAddForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Project
-        </Button>
+        <div className="flex items-center gap-2">
+          <ToggleGroup 
+            type="single" 
+            value={viewMode}
+            onValueChange={(value: 'grid' | 'list') => {
+              if (value) setViewMode(value);
+            }}
+            variant="outline"
+            size="sm"
+          >
+            <ToggleGroupItem value="grid" aria-label="Toggle grid view">
+              <Grid className="h-4 w-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="list" aria-label="Toggle list view">
+              <List className="h-4 w-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Button onClick={() => setShowAddForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Project
+          </Button>
+        </div>
       </motion.div>
 
       {showAddForm && (
@@ -117,25 +137,40 @@ const ProjectManagement = () => {
         transition={{ delay: 0.2 }}
       >
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4" />
               Projects ({localProjects.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {localProjects.map((project, index) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  employees={employees}
-                  index={index}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
+            {viewMode === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {localProjects.map((project, index) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    employees={employees}
+                    index={index}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {localProjects.map((project, index) => (
+                  <ProjectListItem
+                    key={project.id}
+                    project={project}
+                    employees={employees}
+                    index={index}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
             {localProjects.length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 No projects created yet

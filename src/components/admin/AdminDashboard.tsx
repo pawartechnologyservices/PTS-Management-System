@@ -86,7 +86,7 @@ const AdminDashboard = () => {
               <Route path="/meetings" element={<MeetingManagement />} />
               <Route path="/projects" element={<ProjectManagement />} />
               <Route path="/leaves" element={<LeaveManagement />} />
-              <Route path="/admin/chat" element={<ChatManagement />} />
+              <Route path="/chat" element={<ChatManagement />} />
               <Route path="/salary" element={<SalaryManagement />} />
               <Route path="/reports" element={<ReportsManagement />} />
               <Route path="/expenses" element={<ExpenseManagement />} />

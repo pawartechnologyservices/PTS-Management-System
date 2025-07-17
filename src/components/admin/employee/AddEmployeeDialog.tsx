@@ -4,7 +4,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
-import { Plus, Upload, Camera, CalendarIcon } from 'lucide-react';
+import { Plus, Upload, Camera } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { Calendar } from '../../ui/calendar';
 import { format } from 'date-fns';
@@ -23,10 +23,10 @@ interface NewEmployee {
   joiningDate: Date | undefined;
   address: string;
   gender: string;
-  emergencyContact: string;
+  employeeId: string;
   employmentType: string;
   salary: string;
-  skills: string[];
+  isActive: boolean;
 }
 
 interface AddEmployeeDialogProps {
@@ -52,12 +52,11 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
     joiningDate: undefined,
     address: '',
     gender: '',
-    emergencyContact: '',
+    employeeId: `EMP${Math.floor(100000 + Math.random() * 900000)}`,
     employmentType: 'full-time',
     salary: '',
-    skills: []
+    isActive: true
   });
-  const [currentSkill, setCurrentSkill] = useState('');
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,23 +67,6 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
       };
       reader.readAsDataURL(file);
     }
-  };
-
-  const handleAddSkill = () => {
-    if (currentSkill.trim() && !newEmployee.skills.includes(currentSkill.trim())) {
-      setNewEmployee(prev => ({
-        ...prev,
-        skills: [...prev.skills, currentSkill.trim()]
-      }));
-      setCurrentSkill('');
-    }
-  };
-
-  const handleRemoveSkill = (skillToRemove: string) => {
-    setNewEmployee(prev => ({
-      ...prev,
-      skills: prev.skills.filter(skill => skill !== skillToRemove)
-    }));
   };
 
   const handleAddEmployee = () => {
@@ -101,10 +83,10 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
         joiningDate: undefined,
         address: '',
         gender: '',
-        emergencyContact: '',
+        employeeId: `EMP${Math.floor(100000 + Math.random() * 900000)}`,
         employmentType: 'full-time',
         salary: '',
-        skills: []
+        isActive: true
       });
       setShowAddDialog(false);
     }
@@ -118,22 +100,21 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
           Add Employee
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add New Employee</DialogTitle>
         </DialogHeader>
-        <div className="space-y-6">
-          {/* Profile Picture Upload */}
+        <div className="space-y-4">
           <div className="flex flex-col items-center space-y-4">
             <div className="relative">
-              <Avatar className="w-24 h-24">
+              <Avatar className="w-20 h-20">
                 <AvatarImage src={newEmployee.profileImage} />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-2xl">
-                  {newEmployee.name ? newEmployee.name.split(' ').map(n => n[0]).join('') : <Camera className="w-8 h-8" />}
+                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-lg">
+                  {newEmployee.name ? newEmployee.name.split(' ').map(n => n[0]).join('') : <Camera className="w-6 h-6" />}
                 </AvatarFallback>
               </Avatar>
-              <label htmlFor="employee-profile-upload" className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-colors">
-                <Upload className="w-4 h-4" />
+              <label htmlFor="employee-profile-upload" className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-1.5 cursor-pointer hover:bg-blue-700 transition-colors">
+                <Upload className="w-3 h-3" />
               </label>
             </div>
             <input
@@ -143,7 +124,7 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
               onChange={handleImageUpload}
               className="hidden"
             />
-            <p className="text-sm text-gray-600">Upload profile picture (Max 2MB)</p>
+            <p className="text-sm text-gray-600">Upload profile picture</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -236,7 +217,6 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
                     variant="outline"
                     className="w-full justify-start text-left font-normal"
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
                     {newEmployee.joiningDate ? format(newEmployee.joiningDate, "PPP") : <span>Pick a date</span>}
                   </Button>
                 </PopoverTrigger>
@@ -263,7 +243,6 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
                   <SelectItem value="full-time">Full-time</SelectItem>
                   <SelectItem value="part-time">Part-time</SelectItem>
                   <SelectItem value="contract">Contract</SelectItem>
-                  <SelectItem value="intern">Intern</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -271,20 +250,19 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
+              <label className="text-sm font-medium">Employee ID</label>
+              <Input
+                value={newEmployee.employeeId}
+                readOnly
+              />
+            </div>
+            <div>
               <label className="text-sm font-medium">Salary</label>
               <Input
                 type="number"
                 placeholder="Enter salary"
                 value={newEmployee.salary}
                 onChange={(e) => setNewEmployee({...newEmployee, salary: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Emergency Contact</label>
-              <Input
-                placeholder="Enter emergency contact"
-                value={newEmployee.emergencyContact}
-                onChange={(e) => setNewEmployee({...newEmployee, emergencyContact: e.target.value})}
               />
             </div>
           </div>
@@ -308,10 +286,6 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
                 <RadioGroupItem value="other" id="other" />
                 <Label htmlFor="other">Other</Label>
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="prefer-not-to-say" id="prefer-not-to-say" />
-                <Label htmlFor="prefer-not-to-say">Prefer not to say</Label>
-              </div>
             </RadioGroup>
           </div>
 
@@ -325,38 +299,7 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
             />
           </div>
 
-          <div>
-            <label className="text-sm font-medium">Skills</label>
-            <div className="flex gap-2 mt-2">
-              <Input
-                placeholder="Add skill"
-                value={currentSkill}
-                onChange={(e) => setCurrentSkill(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddSkill()}
-              />
-              <Button type="button" onClick={handleAddSkill} variant="outline">
-                Add
-              </Button>
-            </div>
-            {newEmployee.skills.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {newEmployee.skills.map((skill) => (
-                  <div key={skill} className="flex items-center bg-gray-100 px-3 py-1 rounded-full text-sm">
-                    {skill}
-                    <button 
-                      type="button" 
-                      onClick={() => handleRemoveSkill(skill)}
-                      className="ml-2 text-gray-500 hover:text-gray-700"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
               Cancel
             </Button>

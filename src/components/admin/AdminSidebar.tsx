@@ -1,19 +1,19 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Clock, 
-  Calendar, 
-  FolderOpen, 
-  Plane, 
-  CreditCard, 
-  FileText, 
-  Receipt, 
+import PTSLogo from '../../../src/assets/PTS.png'; // Make sure this path is correct
+import {
+  LayoutDashboard,
+  Users,
+  Clock,
+  Calendar,
+  FolderOpen,
+  Plane,
+  CreditCard,
+  FileText,
+  Receipt,
   Settings,
   X,
-  Building2,
   MessageCircle
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -51,11 +51,11 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ onClose }) => {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+            <img src={PTSLogo} alt="PTS Logo" className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="font-semibold text-gray-800">HRMS</h2>
+            <h2 className="font-semibold text-gray-800">Management System</h2>
             <p className="text-xs text-gray-500">Admin Panel</p>
           </div>
         </div>
