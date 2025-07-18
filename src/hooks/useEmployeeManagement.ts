@@ -74,9 +74,9 @@ export const useEmployeeManagement = () => {
 
     if (searchTerm) {
       filtered = filtered.filter(emp => 
-        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase())
+        emp.name?.toLowerCase().includes(searchTerm?.toLowerCase()) ||
+        emp.email?.toLowerCase().includes(searchTerm?.toLowerCase()) ||
+        emp.employeeId?.toLowerCase().includes(searchTerm?.toLowerCase())
       );
     }
 

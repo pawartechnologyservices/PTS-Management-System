@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -17,10 +16,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
+import { database } from '../../firebase';
+import { ref, push, set, onValue, update, get } from 'firebase/database';
+import { toast } from 'react-hot-toast';
+
+interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  punchIn: string;
+  punchOut: string | null;
+  status: string;
+  workMode: string;
+  timestamp: number;
+  department: string;
+  designation: string;
+}
 
 const EmployeeDashboardHome = () => {
   const { user } = useAuth();
-  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     attendanceRate: 0,
     leavesUsed: 0,
@@ -47,67 +64,176 @@ const EmployeeDashboardHome = () => {
     { id: 3, action: 'Completed task review', time: 'Yesterday', type: 'task' },
   ]);
 
-  useEffect(() => {
-    // Load user stats
-    const attendance = JSON.parse(localStorage.getItem('attendance_records') || '[]');
-    const userAttendance = attendance.filter((record: any) => record.employeeId === user?.id);
-    const today = new Date().toDateString();
-    const todayRecord = userAttendance.find((record: any) => 
-      new Date(record.date).toDateString() === today
-    );
-    
-    setTodayAttendance(todayRecord);
-    
-    // Calculate stats
-    const thisMonth = new Date().getMonth();
-    const thisYear = new Date().getFullYear();
-    const monthlyAttendance = userAttendance.filter((record: any) => {
-      const recordDate = new Date(record.date);
-      return recordDate.getMonth() === thisMonth && recordDate.getFullYear() === thisYear;
-    });
-    
-    setStats({
-      attendanceRate: Math.round((monthlyAttendance.length / 22) * 100), // 22 working days
-      leavesUsed: 3, // Mock data
-      activeProjects: 2, // Mock data
-      upcomingMeetings: upcomingMeetings.length
-    });
-  }, [user]);
+  const loadAttendanceData = async () => {
+    if (!user?.id || !user?.adminUid) {
+      setLoading(false);
+      return;
+    }
 
-  const handlePunchIn = () => {
-    const attendance = JSON.parse(localStorage.getItem('attendance_records') || '[]');
-    const newRecord = {
-      id: Date.now().toString(),
-      employeeId: user?.id,
-      employeeName: user?.name,
-      date: new Date().toISOString(),
-      punchIn: new Date().toLocaleTimeString(),
-      punchOut: null,
-      status: 'present',
-      workMode: 'office'
-    };
-    
-    attendance.push(newRecord);
-    localStorage.setItem('attendance_records', JSON.stringify(attendance));
-    
-    setTodayAttendance(newRecord);
+    try {
+      const today = new Date();
+      const todayDateString = today.toISOString().split('T')[0];
+      const attendanceRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching`);
+      
+      // First load the data immediately
+      const snapshot = await get(attendanceRef);
+      const data = snapshot.val();
+      
+      if (data) {
+        const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...(value as Omit<AttendanceRecord, 'id'>)
+        })).sort((a, b) => b.timestamp - a.timestamp);
+        
+        // Find today's record using proper date comparison
+        const todayRecord = records.find(record => {
+          const recordDate = new Date(record.date);
+          return (
+            recordDate.getDate() === today.getDate() &&
+            recordDate.getMonth() === today.getMonth() &&
+            recordDate.getFullYear() === today.getFullYear()
+          );
+        });
+        
+        setTodayAttendance(todayRecord || null);
+        
+        // Calculate stats for the current month
+        const thisMonth = today.getMonth();
+        const thisYear = today.getFullYear();
+        const monthlyRecords = records.filter(record => {
+          const recordDate = new Date(record.date);
+          return recordDate.getMonth() === thisMonth && 
+                 recordDate.getFullYear() === thisYear;
+        });
+        
+        setStats({
+          attendanceRate: Math.round((monthlyRecords.length / 22) * 100),
+          leavesUsed: 3,
+          activeProjects: 2,
+          upcomingMeetings: upcomingMeetings.length
+        });
+      } else {
+        setTodayAttendance(null);
+      }
+
+      // Then set up the real-time listener
+      const unsubscribe = onValue(attendanceRef, (snapshot) => {
+        const updatedData = snapshot.val();
+        if (updatedData) {
+          const updatedRecords: AttendanceRecord[] = Object.entries(updatedData).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<AttendanceRecord, 'id'>)
+          })).sort((a, b) => b.timestamp - a.timestamp);
+          
+          // Find today's record using proper date comparison
+          const updatedTodayRecord = updatedRecords.find(record => {
+            const recordDate = new Date(record.date);
+            return (
+              recordDate.getDate() === today.getDate() &&
+              recordDate.getMonth() === today.getMonth() &&
+              recordDate.getFullYear() === today.getFullYear()
+            );
+          });
+          
+          setTodayAttendance(updatedTodayRecord || null);
+        } else {
+          setTodayAttendance(null);
+        }
+      });
+
+      return unsubscribe;
+    } catch (error) {
+      console.error("Error loading attendance data:", error);
+      toast.error("Failed to load attendance data");
+      setTodayAttendance(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePunchOut = () => {
-    const attendance = JSON.parse(localStorage.getItem('attendance_records') || '[]');
-    const updatedAttendance = attendance.map((record: any) => {
-      if (record.id === todayAttendance.id) {
-        return { ...record, punchOut: new Date().toLocaleTimeString() };
-      }
-      return record;
-    });
+  useEffect(() => {
+    let unsubscribe: () => void;
     
-    localStorage.setItem('attendance_records', JSON.stringify(updatedAttendance));
-    
-    setTodayAttendance({
-      ...todayAttendance,
-      punchOut: new Date().toLocaleTimeString()
-    });
+    const fetchData = async () => {
+      unsubscribe = await loadAttendanceData();
+    };
+
+    fetchData();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user]);
+
+  const handlePunchIn = async () => {
+    if (!user?.id || !user?.adminUid) {
+      toast.error("User information not available");
+      return;
+    }
+
+    if (todayAttendance) {
+      toast.error("You've already punched in today");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const now = new Date();
+      const newRecord: Omit<AttendanceRecord, 'id'> = {
+        employeeId: user.id,
+        employeeName: user.name || 'Unknown',
+        date: now.toISOString(),
+        punchIn: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        punchOut: null,
+        status: 'present',
+        workMode: 'office',
+        timestamp: now.getTime(),
+        department: user.department || '',
+        designation: user.designation || ''
+      };
+      
+      const punchingRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching`);
+      const newRecordRef = push(punchingRef);
+      await set(newRecordRef, newRecord);
+      
+      toast.success("Punched in successfully!");
+    } catch (error) {
+      console.error("Punch-in error:", error);
+      toast.error("Failed to punch in");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePunchOut = async () => {
+    if (!user?.id || !user?.adminUid || !todayAttendance?.id) {
+      toast.error("Cannot punch out - missing required data");
+      return;
+    }
+
+    if (todayAttendance.punchOut) {
+      toast.error("You've already punched out today");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const now = new Date();
+      const updates = {
+        punchOut: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now.getTime()
+      };
+      
+      const recordRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching/${todayAttendance.id}`);
+      await update(recordRef, updates);
+      
+      toast.success("Punched out successfully!");
+    } catch (error) {
+      console.error("Punch-out error:", error);
+      toast.error("Failed to punch out");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cardVariants = {
@@ -230,7 +356,11 @@ const EmployeeDashboardHome = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {todayAttendance ? (
+            {loading ? (
+              <div className="flex justify-center items-center h-20">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+              </div>
+            ) : todayAttendance ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
                   <div>
@@ -248,13 +378,16 @@ const EmployeeDashboardHome = () => {
                     Present
                   </Badge>
                 </div>
-                {!todayAttendance.punchOut && (
+                {!todayAttendance.punchOut ? (
                   <Button 
                     onClick={handlePunchOut}
                     className="bg-red-600 hover:bg-red-700"
+                    disabled={loading}
                   >
-                    Punch Out
+                    {loading ? "Processing..." : "Punch Out"}
                   </Button>
+                ) : (
+                  <div className="text-sm text-gray-500">Attendance completed for today</div>
                 )}
               </div>
             ) : (
@@ -266,9 +399,19 @@ const EmployeeDashboardHome = () => {
                 <Button 
                   onClick={handlePunchIn}
                   className="bg-green-600 hover:bg-green-700"
+                  disabled={loading}
                 >
-                  <Clock className="w-4 h-4 mr-2" />
-                  Punch In
+                  {loading ? (
+                    <>
+                      <Clock className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-4 h-4 mr-2" />
+                      Punch In
+                    </>
+                  )}
                 </Button>
               </div>
             )}
@@ -293,7 +436,7 @@ const EmployeeDashboardHome = () => {
                 {quickActions.map((action, index) => (
                   <Button
                     key={index}
-                    className={`h-20 flex flex-col gap-2 ${action.color}`}
+                    className={`h-20 flex flex-col gap-2 ${action.color} text-white`}
                   >
                     <action.icon className="h-5 w-5" />
                     <span className="text-sm">{action.label}</span>

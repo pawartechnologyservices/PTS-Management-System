@@ -1,24 +1,34 @@
-
 import React, { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
 import { motion } from 'framer-motion';
 import { useToast } from '../../hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Users, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Users, Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft } from 'lucide-react';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { ref, set } from 'firebase/database';
+import { auth, database } from '../../firebase';
 
 interface AdminLoginPageProps {
   onForgotPassword: () => void;
 }
 
+type AuthMode = 'login' | 'signup';
+
 const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => {
+  // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  
+  // UI state
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [mode, setMode] = useState<AuthMode>('login');
+  
+  // Hooks
   const { toast } = useToast();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -34,21 +44,124 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
     }
 
     setLoading(true);
-    const result = await login(email, password, 'admin');
-    setLoading(false);
-
-    if (result.success) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Update last login timestamp in database
+      await set(ref(database, `users/${userCredential.user.uid}/lastLogin`), new Date().toISOString());
+      
       toast({
         title: "Success",
         description: "Admin login successful!",
       });
-    } else {
+    } catch (error: any) {
+      handleAuthError(error, 'login');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !password || !confirmPassword || !name) {
       toast({
         title: "Error",
-        description: result.message || "Invalid admin credentials",
+        description: "Please fill in all fields",
         variant: "destructive",
       });
+      return;
     }
+
+    if (password !== confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Passwords don't match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Store user data in Realtime Database
+      await set(ref(database, `users/${userCredential.user.uid}`), {
+        name: name,
+        email: email,
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        isActive: true
+      });
+
+      toast({
+        title: "Success",
+        description: "Admin account created successfully!",
+      });
+      setMode('login');
+    } catch (error: any) {
+      handleAuthError(error, 'signup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAuthError = (error: any, action: 'login' | 'signup') => {
+    let errorMessage = action === 'login' ? "Login failed" : "Signup failed";
+    
+    switch (error.code) {
+      case 'auth/invalid-email':
+        errorMessage = "Invalid email format";
+        break;
+      case 'auth/user-disabled':
+        errorMessage = "Account disabled";
+        break;
+      case 'auth/user-not-found':
+        errorMessage = "User not found";
+        break;
+      case 'auth/wrong-password':
+        errorMessage = "Incorrect password";
+        break;
+      case 'auth/email-already-in-use':
+        errorMessage = "Email already in use";
+        break;
+      case 'auth/operation-not-allowed':
+        errorMessage = "Operation not allowed";
+        break;
+      case 'auth/weak-password':
+        errorMessage = "Password should be at least 6 characters";
+        break;
+      case 'auth/too-many-requests':
+        errorMessage = "Too many attempts. Try again later";
+        break;
+      default:
+        errorMessage = error.message || errorMessage;
+    }
+
+    toast({
+      title: "Error",
+      description: errorMessage,
+      variant: "destructive",
+    });
+  };
+
+  const toggleMode = () => {
+    setMode(mode === 'login' ? 'signup' : 'login');
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setName('');
   };
 
   return (
@@ -64,13 +177,34 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
             <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
               <Users className="w-8 h-8 text-blue-600" />
             </div>
-            <CardTitle className="text-2xl">Admin Login</CardTitle>
+            <CardTitle className="text-2xl">
+              {mode === 'login' ? 'Admin Login' : 'Admin Sign Up'}
+            </CardTitle>
             <CardDescription>
-              Access the admin dashboard
+              {mode === 'login' 
+                ? 'Access the admin dashboard' 
+                : 'Create a new admin account'}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
+              {mode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="John Doe"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
@@ -93,7 +227,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Enter password"
+                    placeholder={mode === 'login' ? "Enter password" : "Create password (min 6 chars)"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10 pr-10"
@@ -107,23 +241,67 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
                   </button>
                 </div>
               </div>
+
+              {mode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="confirmPassword"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              )}
               
               <Button 
                 type="submit" 
                 className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
                 disabled={loading}
               >
-                {loading ? 'Signing in...' : 'Sign In as Admin'}
+                {loading ? (
+                  <span className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    {mode === 'login' ? 'Signing in...' : 'Creating account...'}
+                  </span>
+                ) : mode === 'login' ? 'Sign In as Admin' : 'Create Admin Account'}
               </Button>
             </form>
             
-            <div className="mt-4 text-center">
+            <div className="mt-4 text-center space-y-2">
               <button
-                onClick={onForgotPassword}
-                className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                onClick={toggleMode}
+                className="text-sm text-blue-600 hover:text-blue-800 transition-colors flex items-center justify-center w-full"
               >
-                Forgot Password?
+                {mode === 'login' ? (
+                  <>
+                    <UserPlus className="w-4 h-4 mr-1" />
+                    Need an admin account? Sign up
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeft className="w-4 h-4 mr-1" />
+                    Back to login
+                  </>
+                )}
               </button>
+
+              {mode === 'login' && (
+                <button
+                  onClick={onForgotPassword}
+                  className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  Forgot Password?
+                </button>
+              )}
             </div>
           </CardContent>
         </Card>
