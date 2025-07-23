@@ -8,11 +8,30 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
+import { database } from '../../firebase';
+import { ref, onValue, push, set } from 'firebase/database';
 import { toast } from '../ui/use-toast';
+
+interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  department: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  appliedAt: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  approvedBy?: string;
+}
 
 const EmployeeLeaves = () => {
   const { user } = useAuth();
-  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [showApplyForm, setShowApplyForm] = useState(false);
   const [formData, setFormData] = useState({
     leaveType: '',
@@ -20,53 +39,103 @@ const EmployeeLeaves = () => {
     endDate: '',
     reason: ''
   });
+  const [loading, setLoading] = useState(true);
 
   const leaveTypes = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Maternity Leave', 'Paternity Leave', 'Emergency Leave'];
 
   useEffect(() => {
-    const requests = JSON.parse(localStorage.getItem('leave_requests') || '[]');
-    const userRequests = requests.filter(request => request.employeeId === user?.employeeId);
-    setLeaveRequests(userRequests);
+    if (!user?.id || !user?.adminUid) {
+      setLoading(false);
+      return;
+    }
+
+    const leavesRef = ref(database, `users/${user.adminUid}/employees/${user.id}/leaves`);
+    
+    const unsubscribe = onValue(leavesRef, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const requests: LeaveRequest[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<LeaveRequest, 'id'>)
+          }));
+          // Sort by appliedAt date (newest first)
+          requests.sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
+          setLeaveRequests(requests);
+        } else {
+          setLeaveRequests([]);
+        }
+      } catch (error) {
+        console.error("Error fetching leave requests:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load leave requests",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const newRequest = {
-      id: Date.now().toString(),
-      employeeId: user?.employeeId,
-      employeeName: user?.name,
-      employeeEmail: user?.email,
-      department: user?.department,
-      ...formData,
-      status: 'pending',
-      appliedAt: new Date().toISOString()
-    };
+    if (!user?.id || !user?.adminUid) {
+      toast({
+        title: "Error",
+        description: "User information not available",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    const allRequests = JSON.parse(localStorage.getItem('leave_requests') || '[]');
-    const updatedRequests = [...allRequests, newRequest];
-    
-    localStorage.setItem('leave_requests', JSON.stringify(updatedRequests));
-    
-    // Update local state
-    const userRequests = updatedRequests.filter(request => request.employeeId === user?.employeeId);
-    setLeaveRequests(userRequests);
-    
-    toast({
-      title: "Leave Applied",
-      description: "Your leave request has been submitted successfully."
-    });
-    
-    setFormData({
-      leaveType: '',
-      startDate: '',
-      endDate: '',
-      reason: ''
-    });
-    setShowApplyForm(false);
+    try {
+      setLoading(true);
+      const newRequest: Omit<LeaveRequest, 'id'> = {
+        employeeId: user.id,
+        employeeName: user.name || '',
+        employeeEmail: user.email || '',
+        department: user.department || '',
+        leaveType: formData.leaveType,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        reason: formData.reason,
+        status: 'pending',
+        appliedAt: new Date().toISOString()
+      };
+
+      const leavesRef = ref(database, `users/${user.adminUid}/employees/${user.id}/leaves`);
+      const newLeaveRef = push(leavesRef);
+      await set(newLeaveRef, newRequest);
+
+      toast({
+        title: "Leave Applied",
+        description: "Your leave request has been submitted successfully."
+      });
+      
+      setFormData({
+        leaveType: '',
+        startDate: '',
+        endDate: '',
+        reason: ''
+      });
+      setShowApplyForm(false);
+    } catch (error) {
+      console.error("Error submitting leave request:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit leave request",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-700';
       case 'approved': return 'bg-green-100 text-green-700';
@@ -97,6 +166,14 @@ const EmployeeLeaves = () => {
   };
 
   const stats = getLeaveStats();
+
+  if (loading && leaveRequests.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -221,7 +298,11 @@ const EmployeeLeaves = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <Select value={formData.leaveType} onValueChange={(value) => setFormData({...formData, leaveType: value})}>
+                <Select 
+                  value={formData.leaveType} 
+                  onValueChange={(value) => setFormData({...formData, leaveType: value})}
+                  required
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Leave Type" />
                   </SelectTrigger>
@@ -240,6 +321,7 @@ const EmployeeLeaves = () => {
                       value={formData.startDate}
                       onChange={(e) => setFormData({...formData, startDate: e.target.value})}
                       required
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
                   <div>
@@ -249,6 +331,7 @@ const EmployeeLeaves = () => {
                       value={formData.endDate}
                       onChange={(e) => setFormData({...formData, endDate: e.target.value})}
                       required
+                      min={formData.startDate || new Date().toISOString().split('T')[0]}
                     />
                   </div>
                 </div>
@@ -266,11 +349,19 @@ const EmployeeLeaves = () => {
                   value={formData.reason}
                   onChange={(e) => setFormData({...formData, reason: e.target.value})}
                   required
+                  minLength={10}
                 />
 
                 <div className="flex gap-2">
-                  <Button type="submit">Apply Leave</Button>
-                  <Button type="button" variant="outline" onClick={() => setShowApplyForm(false)}>
+                  <Button type="submit" disabled={loading}>
+                    {loading ? "Submitting..." : "Apply Leave"}
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setShowApplyForm(false)}
+                    disabled={loading}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -310,6 +401,11 @@ const EmployeeLeaves = () => {
                         <Badge className={getStatusColor(request.status)}>
                           {request.status}
                         </Badge>
+                        {request.approvedBy && (
+                          <Badge variant="outline" className="ml-2">
+                            Approved by: {request.approvedBy}
+                          </Badge>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 text-sm text-gray-600">
@@ -333,18 +429,18 @@ const EmployeeLeaves = () => {
                       </div>
                       
                       <p className="text-xs text-gray-500">
-                        Applied on: {new Date(request.appliedAt).toLocaleDateString()}
+                        Applied on: {new Date(request.appliedAt).toLocaleString()}
                       </p>
                       
                       {request.status === 'approved' && request.approvedAt && (
                         <p className="text-xs text-green-600">
-                          Approved on: {new Date(request.approvedAt).toLocaleDateString()}
+                          Approved on: {new Date(request.approvedAt).toLocaleString()}
                         </p>
                       )}
                       
                       {request.status === 'rejected' && request.rejectedAt && (
                         <p className="text-xs text-red-600">
-                          Rejected on: {new Date(request.rejectedAt).toLocaleDateString()}
+                          Rejected on: {new Date(request.rejectedAt).toLocaleString()}
                         </p>
                       )}
                     </div>

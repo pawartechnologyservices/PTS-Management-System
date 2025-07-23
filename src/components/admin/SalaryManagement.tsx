@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CreditCard, Download, Send, Upload, Users, FileText, Settings, Edit, Trash2 } from 'lucide-react';
+import { CreditCard, Download, Send, Users, Settings, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -10,16 +10,56 @@ import { toast } from '../ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Label } from '../ui/label';
-import SalaryTemplateCreator from './SalaryTemplateCreator';
+import { ref, onValue, off, set, push, update, remove } from 'firebase/database';
+import { database } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
 import { generateSalarySlipPDF } from '../../utils/pdfGenerator';
 
-const SalaryManagement = () => {
-  const [employees, setEmployees] = useState([]);
-  const [salarySlips, setSalarySlips] = useState([]);
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  designation: string;
+  employeeId: string;
+  isActive: boolean;
+  createdAt: string;
+  profileImage?: string;
+  salary?: number; // Actual salary from the database
+  workMode?: string;
+  employmentType?: string;
+}
+
+interface SalarySlip {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  month: number;
+  year: number;
+  basicSalary: number;
+  allowances: number;
+  deductions: number;
+  netSalary: number;
+  generatedAt: string;
+  status: 'generated' | 'sent';
+  sentAt?: string;
+}
+
+const months = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const SalaryManagement: React.FC = () => {
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [salarySlips, setSalarySlips] = useState<SalarySlip[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [editingSlip, setEditingSlip] = useState(null);
-  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [editingSlip, setEditingSlip] = useState<SalarySlip | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editData, setEditData] = useState({
     basicSalary: 0,
     allowances: 0,
@@ -28,116 +68,233 @@ const SalaryManagement = () => {
   const [employeeEditData, setEmployeeEditData] = useState({
     name: '',
     designation: '',
-    basicSalary: 0,
-    customSalary: false
+    salary: 0,
+    workMode: 'office',
+    employmentType: 'full-time'
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  const workModes = ['office', 'remote', 'hybrid'];
+  const employmentTypes = ['full-time', 'part-time', 'contract', 'internship'];
+
+  // Fetch employees from Firebase
   useEffect(() => {
-    const employeeData = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const activeEmployees = employeeData.filter(emp => emp.isActive && emp.role === 'employee');
-    setEmployees(activeEmployees);
+    if (!user || user.role !== 'admin') return;
 
-    const slips = JSON.parse(localStorage.getItem('salary_slips') || '[]');
-    setSalarySlips(slips);
-  }, []);
-
-  const generateSalarySlip = (employee) => {
-    let basicSalary;
-    if (employee.customSalary) {
-      basicSalary = employee.basicSalary;
-    } else {
-      basicSalary = getBasicSalary(employee.designation);
-    }
+    setLoading(true);
+    const employeesRef = ref(database, `users/${user.id}/employees`);
     
-    const allowances = basicSalary * 0.3;
-    const deductions = basicSalary * 0.12;
-    const netSalary = basicSalary + allowances - deductions;
+    const fetchEmployees = onValue(employeesRef, (snapshot) => {
+      const employeesData: Employee[] = [];
+      snapshot.forEach((childSnapshot) => {
+        const employee = childSnapshot.val();
+        employeesData.push({
+          id: childSnapshot.key || '',
+          name: employee.name,
+          email: employee.email,
+          phone: employee.phone,
+          department: employee.department,
+          designation: employee.designation,
+          employeeId: employee.employeeId || `EMP-${childSnapshot.key?.slice(0, 8)}`,
+          isActive: employee.status === 'active',
+          createdAt: employee.createdAt,
+          profileImage: employee.profileImage,
+          salary: employee.salary, // Actual salary from the database
+          workMode: employee.workMode || 'office',
+          employmentType: employee.employmentType || 'full-time'
+        });
+      });
 
-    const salarySlip = {
-      id: Date.now().toString(),
-      employeeId: employee.employeeId,
-      employeeName: employee.name,
-      employeeEmail: employee.email,
-      month: selectedMonth,
-      year: selectedYear,
-      basicSalary,
-      allowances,
-      deductions,
-      netSalary,
-      generatedAt: new Date().toISOString(),
-      status: 'generated'
-    };
-
-    const updatedSlips = [...salarySlips, salarySlip];
-    setSalarySlips(updatedSlips);
-    localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
-
-    toast({
-      title: "Salary Slip Generated",
-      description: `Salary slip generated for ${employee.name}`
+      setEmployees(employeesData.filter(emp => emp.isActive));
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching employees:', error);
+      setError('Failed to load employees');
+      setLoading(false);
     });
-  };
 
-  const sendSalarySlip = (slip) => {
-    // In a real app, this would send email
-    const updatedSlips = salarySlips.map(s => 
-      s.id === slip.id ? { ...s, status: 'sent', sentAt: new Date().toISOString() } : s
-    );
+    return () => {
+      off(employeesRef);
+    };
+  }, [user]);
+
+  // Fetch salary slips from Firebase
+  useEffect(() => {
+    if (!user) return;
+
+    setLoading(true);
+    const salaryRef = ref(database, `users/${user.id}/salaries`);
     
-    setSalarySlips(updatedSlips);
-    localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
+    const fetchSalaries = onValue(salaryRef, (snapshot) => {
+      const salaryData: SalarySlip[] = [];
+      snapshot.forEach((childSnapshot) => {
+        const slip = childSnapshot.val();
+        salaryData.push({
+          id: childSnapshot.key || '',
+          employeeId: slip.employeeId,
+          employeeName: slip.employeeName,
+          employeeEmail: slip.employeeEmail,
+          month: slip.month,
+          year: slip.year,
+          basicSalary: slip.basicSalary,
+          allowances: slip.allowances,
+          deductions: slip.deductions,
+          netSalary: slip.netSalary,
+          generatedAt: slip.generatedAt,
+          status: slip.status,
+          sentAt: slip.sentAt
+        });
+      });
 
-    toast({
-      title: "Salary Slip Sent",
-      description: `Salary slip sent to ${slip.employeeName} via email`
+      setSalarySlips(salaryData);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching salaries:', error);
+      setError('Failed to load salary data');
+      setLoading(false);
     });
-  };
 
-  const getBasicSalary = (designation) => {
-    const salaryMap = {
-      'Software Developer': 60000,
-      'Digital Marketing Executive': 35000,
-      'Sales Executive': 30000,
-      'Product Designer': 45000,
-      'Web Developer': 50000,
-      'Graphic Designer': 35000,
-      'Manager': 80000,
-      'Team Lead': 70000
+    return () => {
+      off(salaryRef);
     };
-    return salaryMap[designation] || 40000;
-  };
+  }, [user]);
 
-  const formatCurrency = (amount) => {
+  const currentMonthSlips = salarySlips.filter(slip => 
+    slip.month === selectedMonth && slip.year === selectedYear
+  );
+
+  const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR'
     }).format(amount);
   };
 
-  const downloadSlipAsPDF = (slip) => {
-    const pdfData = {
-      employeeName: slip.employeeName,
-      employeeId: slip.employeeId,
-      month: months[slip.month],
-      year: slip.year,
-      basicSalary: slip.basicSalary,
-      allowances: slip.allowances,
-      deductions: slip.deductions,
-      netSalary: slip.netSalary,
-      generatedAt: slip.generatedAt,
-      companyName: 'Your Company Name',
-      companyAddress: 'Your Company Address'
-    };
-    
-    generateSalarySlipPDF(pdfData);
-    
-    toast({
-      title: "PDF Downloaded",
-      description: `Salary slip PDF downloaded for ${slip.employeeName}`
-    });
+  const generateSalarySlip = async (employee: Employee) => {
+    if (!user) return;
+
+    try {
+      // Use the actual salary from the employee data
+      const basicSalary = employee.salary || 0;
+      const allowances = basicSalary * 0.3;
+      const deductions = basicSalary * 0.12;
+      const netSalary = basicSalary + allowances - deductions;
+
+      // Generate a new salary slip ID
+      const newSlipRef = push(ref(database, `users/${user.id}/salaries`));
+      const newSlipId = newSlipRef.key;
+
+      const salarySlip: SalarySlip = {
+        id: newSlipId || '',
+        employeeId: employee.employeeId,
+        employeeName: employee.name,
+        employeeEmail: employee.email,
+        month: selectedMonth,
+        year: selectedYear,
+        basicSalary,
+        allowances,
+        deductions,
+        netSalary,
+        generatedAt: new Date().toISOString(),
+        status: 'generated'
+      };
+
+      // Save to admin's salary list
+      await set(newSlipRef, salarySlip);
+      
+      // Save to employee's salary record under the specified path
+      await set(ref(database, `users/${user.id}/employees/${employee.id}/salary/${newSlipId}`), salarySlip);
+
+      toast({
+        title: "Salary Slip Generated",
+        description: `Salary slip generated for ${employee.name}`,
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error generating salary slip:', err);
+      setError('Failed to generate salary slip');
+      toast({
+        title: "Error",
+        description: "Failed to generate salary slip",
+        variant: "destructive"
+      });
+    }
   };
 
-  const editSalarySlip = (slip) => {
+  const sendSalarySlip = async (slip: SalarySlip) => {
+    if (!user) return;
+
+    try {
+      // Find the employee to get their ID
+      const employee = employees.find(e => e.employeeId === slip.employeeId);
+      if (!employee) {
+        throw new Error('Employee not found');
+      }
+
+      const updates: Record<string, any> = {};
+      const sentAt = new Date().toISOString();
+      
+      // Update in admin's salary list
+      updates[`users/${user.id}/salaries/${slip.id}/status`] = 'sent';
+      updates[`users/${user.id}/salaries/${slip.id}/sentAt`] = sentAt;
+      
+      // Update in employee's salary record under the specified path
+      updates[`users/${user.id}/employees/${employee.id}/salary/${slip.id}/status`] = 'sent';
+      updates[`users/${user.id}/employees/${employee.id}/salary/${slip.id}/sentAt`] = sentAt;
+
+      await update(ref(database), updates);
+
+      toast({
+        title: "Salary Slip Sent",
+        description: `Salary slip sent to ${slip.employeeName} via email`,
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error sending salary slip:', err);
+      setError('Failed to send salary slip');
+      toast({
+        title: "Error",
+        description: "Failed to send salary slip",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const downloadSlipAsPDF = (slip: SalarySlip) => {
+    try {
+      const pdfData = {
+        employeeName: slip.employeeName,
+        employeeId: slip.employeeId,
+        month: months[slip.month],
+        year: slip.year,
+        basicSalary: slip.basicSalary,
+        allowances: slip.allowances,
+        deductions: slip.deductions,
+        netSalary: slip.netSalary,
+        generatedAt: slip.generatedAt,
+        companyName: 'Your Company Name',
+        companyAddress: 'Your Company Address'
+      };
+      
+      generateSalarySlipPDF(pdfData);
+      
+      toast({
+        title: "PDF Downloaded",
+        description: `Salary slip PDF downloaded for ${slip.employeeName}`,
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const editSalarySlip = (slip: SalarySlip) => {
     setEditingSlip(slip);
     setEditData({
       basicSalary: slip.basicSalary,
@@ -146,101 +303,164 @@ const SalaryManagement = () => {
     });
   };
 
-  const editEmployeeData = (employee) => {
+  const editEmployeeData = (employee: Employee) => {
     setEditingEmployee(employee);
     setEmployeeEditData({
       name: employee.name,
       designation: employee.designation,
-      basicSalary: employee.customSalary ? employee.basicSalary : getBasicSalary(employee.designation),
-      customSalary: employee.customSalary || false
+      salary: employee.salary || 0,
+      workMode: employee.workMode || 'office',
+      employmentType: employee.employmentType || 'full-time'
     });
   };
 
-  const handleEmployeeEditSave = () => {
-    const updatedEmployees = employees.map(emp => 
-      emp.employeeId === editingEmployee.employeeId 
-        ? { 
-            ...emp, 
-            name: employeeEditData.name, 
-            designation: employeeEditData.designation,
-            basicSalary: employeeEditData.customSalary ? employeeEditData.basicSalary : getBasicSalary(employeeEditData.designation),
-            customSalary: employeeEditData.customSalary
-          }
-        : emp
-    );
-    
-    setEmployees(updatedEmployees);
-    
-    // Update in localStorage if needed
-    const allEmployees = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const updatedAllEmployees = allEmployees.map(emp => 
-      emp.employeeId === editingEmployee.employeeId 
-        ? { 
-            ...emp, 
-            name: employeeEditData.name, 
-            designation: employeeEditData.designation,
-            basicSalary: employeeEditData.customSalary ? employeeEditData.basicSalary : getBasicSalary(employeeEditData.designation),
-            customSalary: employeeEditData.customSalary
-          }
-        : emp
-    );
-    localStorage.setItem('hrms_users', JSON.stringify(updatedAllEmployees));
-    
-    setEditingEmployee(null);
-    
-    toast({
-      title: "Employee Data Updated",
-      description: "Employee information has been updated successfully"
-    });
-  };
+  const handleEmployeeEditSave = async () => {
+    if (!user || !editingEmployee) return;
 
-  const handleEditSave = () => {
-    const netSalary = editData.basicSalary + editData.allowances - editData.deductions;
-    const updatedSlips = salarySlips.map(slip => 
-      slip.id === editingSlip.id 
-        ? { ...slip, ...editData, netSalary, lastUpdated: new Date().toISOString() }
-        : slip
-    );
-    
-    setSalarySlips(updatedSlips);
-    localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
-    setEditingSlip(null);
-    
-    toast({
-      title: "Salary Slip Updated",
-      description: "Salary slip has been updated successfully"
-    });
-  };
+    try {
+      const updates: Record<string, any> = {};
+      updates[`users/${user.id}/employees/${editingEmployee.id}/name`] = employeeEditData.name;
+      updates[`users/${user.id}/employees/${editingEmployee.id}/designation`] = employeeEditData.designation;
+      updates[`users/${user.id}/employees/${editingEmployee.id}/salary`] = employeeEditData.salary;
+      updates[`users/${user.id}/employees/${editingEmployee.id}/workMode`] = employeeEditData.workMode;
+      updates[`users/${user.id}/employees/${editingEmployee.id}/employmentType`] = employeeEditData.employmentType;
 
-  const deleteSalarySlip = (slipId) => {
-    if (window.confirm('Are you sure you want to delete this salary slip?')) {
-      const updatedSlips = salarySlips.filter(slip => slip.id !== slipId);
-      setSalarySlips(updatedSlips);
-      localStorage.setItem('salary_slips', JSON.stringify(updatedSlips));
+      await update(ref(database), updates);
+      
+      setEditingEmployee(null);
       
       toast({
-        title: "Salary Slip Deleted",
-        description: "Salary slip has been deleted successfully"
+        title: "Employee Data Updated",
+        description: "Employee information has been updated successfully",
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error updating employee:', err);
+      setError('Failed to update employee data');
+      toast({
+        title: "Error",
+        description: "Failed to update employee data",
+        variant: "destructive"
       });
     }
   };
 
-  const toggleCustomSalary = () => {
-    setEmployeeEditData(prev => ({
-      ...prev,
-      customSalary: !prev.customSalary,
-      basicSalary: !prev.customSalary ? prev.basicSalary : getBasicSalary(prev.designation)
-    }));
+  const handleEditSave = async () => {
+    if (!user || !editingSlip) return;
+
+    try {
+      const netSalary = editData.basicSalary + editData.allowances - editData.deductions;
+      
+      const updates: Record<string, any> = {};
+      
+      // Update in admin's salary list
+      updates[`users/${user.id}/salaries/${editingSlip.id}/basicSalary`] = editData.basicSalary;
+      updates[`users/${user.id}/salaries/${editingSlip.id}/allowances`] = editData.allowances;
+      updates[`users/${user.id}/salaries/${editingSlip.id}/deductions`] = editData.deductions;
+      updates[`users/${user.id}/salaries/${editingSlip.id}/netSalary`] = netSalary;
+      updates[`users/${user.id}/salaries/${editingSlip.id}/lastUpdated`] = new Date().toISOString();
+      
+      // Find the employee to get their ID
+      const employee = employees.find(e => e.employeeId === editingSlip.employeeId);
+      if (employee) {
+        // Update in employee's salary record under the specified path
+        updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/basicSalary`] = editData.basicSalary;
+        updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/allowances`] = editData.allowances;
+        updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/deductions`] = editData.deductions;
+        updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/netSalary`] = netSalary;
+        updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/lastUpdated`] = new Date().toISOString();
+      }
+
+      await update(ref(database), updates);
+      
+      setEditingSlip(null);
+      
+      toast({
+        title: "Salary Slip Updated",
+        description: "Salary slip has been updated successfully",
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error updating salary slip:', err);
+      setError('Failed to update salary slip');
+      toast({
+        title: "Error",
+        description: "Failed to update salary slip",
+        variant: "destructive"
+      });
+    }
   };
 
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
+  const deleteSalarySlip = async (slipId: string) => {
+    if (!user || !window.confirm('Are you sure you want to delete this salary slip?')) return;
+    
+    try {
+      // Find the slip to get employee ID
+      const slip = salarySlips.find(s => s.id === slipId);
+      if (!slip) return;
 
-  const currentMonthSlips = salarySlips.filter(slip => 
-    slip.month === selectedMonth && slip.year === selectedYear
-  );
+      const updates: Record<string, null> = {};
+      
+      // Delete from admin's salary list
+      updates[`users/${user.id}/salaries/${slipId}`] = null;
+      
+      // Find the employee to get their ID
+      const employee = employees.find(e => e.employeeId === slip.employeeId);
+      if (employee) {
+        // Delete from employee's salary record under the specified path
+        updates[`users/${user.id}/employees/${employee.id}/salary/${slipId}`] = null;
+      }
+
+      await update(ref(database), updates);
+      
+      toast({
+        title: "Salary Slip Deleted",
+        description: "Salary slip has been deleted successfully",
+        variant: "success"
+      });
+    } catch (err) {
+      console.error('Error deleting salary slip:', err);
+      setError('Failed to delete salary slip');
+      toast({
+        title: "Error",
+        description: "Failed to delete salary slip",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading salary data...</CardTitle>
+        </CardHeader>
+        <CardContent className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Error</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-red-500">{error}</div>
+          <Button 
+            variant="outline" 
+            onClick={() => setError(null)}
+            className="mt-4"
+          >
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -263,7 +483,7 @@ const SalaryManagement = () => {
           </TabsTrigger>
           <TabsTrigger value="template" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Create Template
+            Salary Templates
           </TabsTrigger>
         </TabsList>
 
@@ -279,7 +499,10 @@ const SalaryManagement = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex gap-4">
-                  <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(parseInt(value))}>
+                  <Select 
+                    value={selectedMonth.toString()} 
+                    onValueChange={(value) => setSelectedMonth(parseInt(value))}
+                  >
                     <SelectTrigger className="w-48">
                       <SelectValue placeholder="Select Month" />
                     </SelectTrigger>
@@ -289,13 +512,17 @@ const SalaryManagement = () => {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(parseInt(value))}>
+                  <Select 
+                    value={selectedYear.toString()} 
+                    onValueChange={(value) => setSelectedYear(parseInt(value))}
+                  >
                     <SelectTrigger className="w-32">
                       <SelectValue placeholder="Year" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="2024">2024</SelectItem>
-                      <SelectItem value="2025">2025</SelectItem>
+                      {[2023, 2024, 2025].map(year => (
+                        <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -319,7 +546,6 @@ const SalaryManagement = () => {
                 <div className="space-y-4">
                   {employees.map((employee, index) => {
                     const hasSlip = currentMonthSlips.some(slip => slip.employeeId === employee.employeeId);
-                    const basicSalary = employee.customSalary ? employee.basicSalary : getBasicSalary(employee.designation);
                     
                     return (
                       <motion.div
@@ -327,16 +553,18 @@ const SalaryManagement = () => {
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        className="flex items-center justify-between p-4 border rounded-lg"
+                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold">{employee.name}</h3>
                             {hasSlip && <Badge className="bg-green-100 text-green-700">Generated</Badge>}
-                            {employee.customSalary && <Badge className="bg-purple-100 text-purple-700">Custom Salary</Badge>}
                           </div>
                           <p className="text-sm text-gray-600">{employee.employeeId} • {employee.designation}</p>
-                          <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(basicSalary)}</p>
+                          <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(employee.salary || 0)}</p>
+                          <p className="text-xs text-gray-500">
+                            Work Mode: {employee.workMode} • {employee.employmentType}
+                          </p>
                         </div>
                         <div className="flex gap-2">
                           <Dialog>
@@ -350,62 +578,81 @@ const SalaryManagement = () => {
                                 Edit
                               </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="sm:max-w-[425px]">
                               <DialogHeader>
                                 <DialogTitle>Edit Employee Data - {employee.name}</DialogTitle>
                               </DialogHeader>
                               <div className="space-y-4">
                                 <div>
-                                  <Label>Employee Name</Label>
+                                  <Label htmlFor="employee-name">Employee Name</Label>
                                   <Input
+                                    id="employee-name"
                                     value={employeeEditData.name}
                                     onChange={(e) => setEmployeeEditData({...employeeEditData, name: e.target.value})}
                                   />
                                 </div>
                                 <div>
-                                  <Label>Designation</Label>
-                                  <Select 
+                                  <Label htmlFor="employee-designation">Designation</Label>
+                                  <Input
+                                    id="employee-designation"
                                     value={employeeEditData.designation}
-                                    onValueChange={(value) => setEmployeeEditData({...employeeEditData, designation: value})}
+                                    onChange={(e) => setEmployeeEditData({...employeeEditData, designation: e.target.value})}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="employee-salary">Salary</Label>
+                                  <Input
+                                    id="employee-salary"
+                                    type="number"
+                                    value={employeeEditData.salary}
+                                    onChange={(e) => setEmployeeEditData({...employeeEditData, salary: parseInt(e.target.value)})}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="work-mode">Work Mode</Label>
+                                  <Select
+                                    value={employeeEditData.workMode}
+                                    onValueChange={(value) => setEmployeeEditData({...employeeEditData, workMode: value})}
                                   >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select designation" />
+                                    <SelectTrigger id="work-mode">
+                                      <SelectValue placeholder="Select work mode" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="Software Developer">Software Developer</SelectItem>
-                                      <SelectItem value="Digital Marketing Executive">Digital Marketing Executive</SelectItem>
-                                      <SelectItem value="Sales Executive">Sales Executive</SelectItem>
-                                      <SelectItem value="Product Designer">Product Designer</SelectItem>
-                                      <SelectItem value="Web Developer">Web Developer</SelectItem>
-                                      <SelectItem value="Graphic Designer">Graphic Designer</SelectItem>
-                                      <SelectItem value="Manager">Manager</SelectItem>
-                                      <SelectItem value="Team Lead">Team Lead</SelectItem>
+                                      {workModes.map((mode) => (
+                                        <SelectItem key={mode} value={mode}>
+                                          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                        </SelectItem>
+                                      ))}
                                     </SelectContent>
                                   </Select>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1">
-                                    <Label>Basic Salary</Label>
-                                    <Input
-                                      type="number"
-                                      value={employeeEditData.basicSalary}
-                                      onChange={(e) => setEmployeeEditData({...employeeEditData, basicSalary: parseInt(e.target.value)})}
-                                      disabled={!employeeEditData.customSalary}
-                                    />
-                                  </div>
-                                  <div className="pt-7">
-                                    <Button 
-                                      variant={employeeEditData.customSalary ? "default" : "outline"}
-                                      onClick={toggleCustomSalary}
-                                      size="sm"
-                                    >
-                                      {employeeEditData.customSalary ? 'Custom' : 'Default'}
-                                    </Button>
-                                  </div>
+                                <div>
+                                  <Label htmlFor="employment-type">Employment Type</Label>
+                                  <Select
+                                    value={employeeEditData.employmentType}
+                                    onValueChange={(value) => setEmployeeEditData({...employeeEditData, employmentType: value})}
+                                  >
+                                    <SelectTrigger id="employment-type">
+                                      <SelectValue placeholder="Select employment type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {employmentTypes.map((type) => (
+                                        <SelectItem key={type} value={type}>
+                                          {type.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('-')}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 pt-2">
                                   <Button onClick={handleEmployeeEditSave} className="flex-1">Save</Button>
-                                  <Button variant="outline" onClick={() => setEditingEmployee(null)} className="flex-1">Cancel</Button>
+                                  <Button 
+                                    variant="outline" 
+                                    onClick={() => setEditingEmployee(null)} 
+                                    className="flex-1"
+                                  >
+                                    Cancel
+                                  </Button>
                                 </div>
                               </div>
                             </DialogContent>
@@ -422,6 +669,11 @@ const SalaryManagement = () => {
                       </motion.div>
                     );
                   })}
+                  {employees.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      No active employees found
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -447,7 +699,7 @@ const SalaryManagement = () => {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="flex items-center justify-between p-4 border rounded-lg"
+                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
@@ -460,6 +712,7 @@ const SalaryManagement = () => {
                         <p className="text-sm text-gray-600">Net Salary: {formatCurrency(slip.netSalary)}</p>
                         <p className="text-xs text-gray-500">
                           Generated: {new Date(slip.generatedAt).toLocaleDateString()}
+                          {slip.status === 'sent' && ` • Sent: ${new Date(slip.sentAt!).toLocaleDateString()}`}
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -474,38 +727,47 @@ const SalaryManagement = () => {
                               Edit
                             </Button>
                           </DialogTrigger>
-                          <DialogContent>
+                          <DialogContent className="sm:max-w-[425px]">
                             <DialogHeader>
                               <DialogTitle>Edit Salary Slip - {slip.employeeName}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
                               <div>
-                                <Label>Basic Salary</Label>
+                                <Label htmlFor="basic-salary">Basic Salary</Label>
                                 <Input
+                                  id="basic-salary"
                                   type="number"
                                   value={editData.basicSalary}
                                   onChange={(e) => setEditData({...editData, basicSalary: parseInt(e.target.value)})}
                                 />
                               </div>
                               <div>
-                                <Label>Allowances</Label>
+                                <Label htmlFor="allowances">Allowances</Label>
                                 <Input
+                                  id="allowances"
                                   type="number"
                                   value={editData.allowances}
                                   onChange={(e) => setEditData({...editData, allowances: parseInt(e.target.value)})}
                                 />
                               </div>
                               <div>
-                                <Label>Deductions</Label>
+                                <Label htmlFor="deductions">Deductions</Label>
                                 <Input
+                                  id="deductions"
                                   type="number"
                                   value={editData.deductions}
                                   onChange={(e) => setEditData({...editData, deductions: parseInt(e.target.value)})}
                                 />
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 pt-2">
                                 <Button onClick={handleEditSave} className="flex-1">Save</Button>
-                                <Button variant="outline" onClick={() => setEditingSlip(null)} className="flex-1">Cancel</Button>
+                                <Button 
+                                  variant="outline" 
+                                  onClick={() => setEditingSlip(null)} 
+                                  className="flex-1"
+                                >
+                                  Cancel
+                                </Button>
                               </div>
                             </div>
                           </DialogContent>
@@ -549,7 +811,43 @@ const SalaryManagement = () => {
         </TabsContent>
 
         <TabsContent value="template">
-          <SalaryTemplateCreator />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Salary Templates
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="p-4 border rounded-lg">
+                  <h3 className="font-semibold mb-2">Salary Structure</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Basic Salary + 30% Allowances - 12% Deductions = Net Salary
+                  </p>
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <div className="flex justify-between mb-1">
+                      <span>Basic Salary:</span>
+                      <span>{formatCurrency(50000)}</span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span>Allowances (30%):</span>
+                      <span>+ {formatCurrency(15000)}</span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span>Deductions (12%):</span>
+                      <span>- {formatCurrency(6000)}</span>
+                    </div>
+                    <div className="border-t border-gray-200 my-2"></div>
+                    <div className="flex justify-between font-semibold">
+                      <span>Net Salary:</span>
+                      <span>{formatCurrency(59000)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

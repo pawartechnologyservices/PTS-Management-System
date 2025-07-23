@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -6,9 +6,8 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Users, Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft } from 'lucide-react';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { ref, set } from 'firebase/database';
-import { auth, database } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 interface AdminLoginPageProps {
   onForgotPassword: () => void;
@@ -17,6 +16,9 @@ interface AdminLoginPageProps {
 type AuthMode = 'login' | 'signup';
 
 const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => {
+  const navigate = useNavigate();
+  const { user, login } = useAuth();
+  
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,9 +29,17 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
   // UI state
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<AuthMode>('login');
+  const [justSignedUp, setJustSignedUp] = useState(false);
   
   // Hooks
   const { toast } = useToast();
+
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,17 +55,27 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const result = await login(email, password, 'admin');
       
-      // Update last login timestamp in database
-      await set(ref(database, `users/${userCredential.user.uid}/lastLogin`), new Date().toISOString());
-      
-      toast({
-        title: "Success",
-        description: "Admin login successful!",
-      });
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Admin login successful!",
+        });
+        // The useEffect will handle the redirect when user state updates
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Login failed",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
-      handleAuthError(error, 'login');
+      toast({
+        title: "Error",
+        description: error.message || "Login failed",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -93,75 +113,53 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
 
     setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Store user data in Realtime Database
-      await set(ref(database, `users/${userCredential.user.uid}`), {
-        name: name,
-        email: email,
+      const result = await login(email, password, 'admin', {
+        name,
+        email,
         role: 'admin',
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        isActive: true
+        isActive: true,
+        isNewUser: true // Flag to indicate this is a new user
       });
-
-      toast({
-        title: "Success",
-        description: "Admin account created successfully!",
-      });
-      setMode('login');
+      
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Admin account created successfully! Please login.",
+        });
+        setJustSignedUp(true);
+        setMode('login');
+        // Clear password fields but keep email
+        setPassword('');
+        setConfirmPassword('');
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Signup failed",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
-      handleAuthError(error, 'signup');
+      toast({
+        title: "Error",
+        description: error.message || "Signup failed",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAuthError = (error: any, action: 'login' | 'signup') => {
-    let errorMessage = action === 'login' ? "Login failed" : "Signup failed";
-    
-    switch (error.code) {
-      case 'auth/invalid-email':
-        errorMessage = "Invalid email format";
-        break;
-      case 'auth/user-disabled':
-        errorMessage = "Account disabled";
-        break;
-      case 'auth/user-not-found':
-        errorMessage = "User not found";
-        break;
-      case 'auth/wrong-password':
-        errorMessage = "Incorrect password";
-        break;
-      case 'auth/email-already-in-use':
-        errorMessage = "Email already in use";
-        break;
-      case 'auth/operation-not-allowed':
-        errorMessage = "Operation not allowed";
-        break;
-      case 'auth/weak-password':
-        errorMessage = "Password should be at least 6 characters";
-        break;
-      case 'auth/too-many-requests':
-        errorMessage = "Too many attempts. Try again later";
-        break;
-      default:
-        errorMessage = error.message || errorMessage;
-    }
-
-    toast({
-      title: "Error",
-      description: errorMessage,
-      variant: "destructive",
-    });
-  };
-
   const toggleMode = () => {
     setMode(mode === 'login' ? 'signup' : 'login');
-    setEmail('');
+    // When switching to login mode, keep the email if user just signed up
+    if (mode === 'signup' && !justSignedUp) {
+      setEmail('');
+    }
     setPassword('');
     setConfirmPassword('');
-    setName('');
+    if (mode === 'login') {
+      setName('');
+    }
   };
 
   return (
@@ -187,6 +185,11 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {justSignedUp && (
+              <div className="mb-4 p-3 bg-green-100 text-green-800 rounded-md text-sm">
+                Account created successfully! Please login with your credentials.
+              </div>
+            )}
             <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
               {mode === 'signup' && (
                 <div className="space-y-2">

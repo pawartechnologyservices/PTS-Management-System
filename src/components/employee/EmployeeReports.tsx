@@ -9,6 +9,7 @@ import ReportConfiguration from './reports/ReportConfiguration';
 import AttendanceReportSummary from './reports/AttendanceReportSummary';
 import SalaryReportSummary from './reports/SalaryReportSummary';
 import ProjectsReportSummary from './reports/ProjectsReportSummary';
+import LeaveReportSummary from './reports/LeaveReportSummary';
 
 const EmployeeReports = () => {
   const { user } = useAuth();
@@ -33,6 +34,8 @@ const EmployeeReports = () => {
         return <SalaryReportSummary reportData={reportData} />;
       case 'projects':
         return <ProjectsReportSummary reportData={reportData} />;
+        case 'leaves':
+        return <LeaveReportSummary reportData={reportData} />;
       default:
         return null;
     }

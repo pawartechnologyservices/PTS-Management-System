@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Receipt, Plus, Filter, Download, Trash2 } from 'lucide-react';
@@ -8,8 +7,13 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
+import { ref, onValue, push, set, remove } from 'firebase/database';
+import { database } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
+import { toast } from '../ui/use-toast';
 
 const ExpenseManagement = () => {
+  const { user } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [filteredExpenses, setFilteredExpenses] = useState([]);
@@ -31,10 +35,24 @@ const ExpenseManagement = () => {
   const paymentMethods = ['Cash', 'Bank Transfer', 'Credit Card', 'UPI', 'Cheque'];
 
   useEffect(() => {
-    const savedExpenses = JSON.parse(localStorage.getItem('expenses') || '[]');
-    setExpenses(savedExpenses);
-    setFilteredExpenses(savedExpenses);
-  }, []);
+    if (!user) return;
+
+    const expensesRef = ref(database, `users/${user.id}/expenses`);
+    
+    const unsubscribe = onValue(expensesRef, (snapshot) => {
+      const expensesData = [];
+      snapshot.forEach((childSnapshot) => {
+        expensesData.push({
+          id: childSnapshot.key,
+          ...childSnapshot.val()
+        });
+      });
+      setExpenses(expensesData);
+      setFilteredExpenses(expensesData);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   useEffect(() => {
     let filtered = expenses;
@@ -50,36 +68,67 @@ const ExpenseManagement = () => {
     setFilteredExpenses(filtered);
   }, [filterDepartment, filterCategory, expenses]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const newExpense = {
-      id: Date.now().toString(),
-      ...formData,
-      date: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
+    if (!user) return;
 
-    const updatedExpenses = [...expenses, newExpense];
-    setExpenses(updatedExpenses);
-    localStorage.setItem('expenses', JSON.stringify(updatedExpenses));
-    
-    setFormData({
-      title: '',
-      amount: '',
-      paidTo: '',
-      department: '',
-      category: '',
-      paymentMethod: '',
-      description: '',
-      receipt: null
-    });
-    setShowAddForm(false);
+    try {
+      const newExpense = {
+        ...formData,
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: user.id
+      };
+
+      // Push new expense to Firebase
+      const newExpenseRef = push(ref(database, `users/${user.id}/expenses`));
+      await set(newExpenseRef, newExpense);
+
+      toast({
+        title: "Expense Added",
+        description: "Expense has been successfully recorded"
+      });
+
+      setFormData({
+        title: '',
+        amount: '',
+        paidTo: '',
+        department: '',
+        category: '',
+        paymentMethod: '',
+        description: '',
+        receipt: null
+      });
+      setShowAddForm(false);
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      toast({
+        variant: 'destructive',
+        title: "Error",
+        description: "Failed to add expense"
+      });
+    }
   };
 
-  const handleDelete = (expenseId) => {
-    const updatedExpenses = expenses.filter(expense => expense.id !== expenseId);
-    setExpenses(updatedExpenses);
-    localStorage.setItem('expenses', JSON.stringify(updatedExpenses));
+  const handleDelete = async (expenseId) => {
+    if (!user) return;
+    
+    if (!window.confirm('Are you sure you want to delete this expense?')) return;
+
+    try {
+      await remove(ref(database, `users/${user.id}/expenses/${expenseId}`));
+      toast({
+        title: "Expense Deleted",
+        description: "Expense has been successfully removed"
+      });
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      toast({
+        variant: 'destructive',
+        title: "Error",
+        description: "Failed to delete expense"
+      });
+    }
   };
 
   const getTotalExpenses = () => {

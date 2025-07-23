@@ -1,13 +1,12 @@
-
-import React from 'react';
+import React, { useState} from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
-import { FolderOpen, Calendar, Users } from 'lucide-react';
+import { FolderOpen, Calendar, Users, CheckCircle, PauseCircle, PlayCircle } from 'lucide-react';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
   description: string;
   startDate: string;
   endDate: string;
@@ -28,7 +27,11 @@ const ProjectsPopup: React.FC<ProjectsPopupProps> = ({
   onClose,
   projects
 }) => {
-  const activeProjects = projects.filter(project => project.status === 'active');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'paused'>('all');
+
+  const filteredProjects = activeTab === 'all' 
+    ? projects 
+    : projects.filter(project => project.status === activeTab);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -39,25 +42,71 @@ const ProjectsPopup: React.FC<ProjectsPopupProps> = ({
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'active': return <PlayCircle className="h-4 w-4" />;
+      case 'completed': return <CheckCircle className="h-4 w-4" />;
+      case 'paused': return <PauseCircle className="h-4 w-4" />;
+      default: return <FolderOpen className="h-4 w-4" />;
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
-            Ongoing Projects ({activeProjects.length})
+            Projects Overview ({projects.length})
           </DialogTitle>
         </DialogHeader>
+
+        <div className="flex space-x-2 mb-4">
+          <Button 
+            variant={activeTab === 'all' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('all')}
+            className="flex items-center gap-1"
+          >
+            All ({projects.length})
+          </Button>
+          <Button 
+            variant={activeTab === 'active' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('active')}
+            className="flex items-center gap-1"
+          >
+            <PlayCircle className="h-4 w-4" />
+            Active ({projects.filter(p => p.status === 'active').length})
+          </Button>
+          <Button 
+            variant={activeTab === 'completed' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('completed')}
+            className="flex items-center gap-1"
+          >
+            <CheckCircle className="h-4 w-4" />
+            Completed ({projects.filter(p => p.status === 'completed').length})
+          </Button>
+          <Button 
+            variant={activeTab === 'paused' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('paused')}
+            className="flex items-center gap-1"
+          >
+            <PauseCircle className="h-4 w-4" />
+            Paused ({projects.filter(p => p.status === 'paused').length})
+          </Button>
+        </div>
         
         <div className="space-y-4">
-          {activeProjects.map((project) => (
+          {filteredProjects.map((project) => (
             <div key={project.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold text-lg">{project.title}</h3>
+                    <h3 className="font-semibold text-lg">{project.name}</h3>
                     <Badge className={getStatusColor(project.status)}>
-                      {project.status}
+                      <div className="flex items-center gap-1">
+                        {getStatusIcon(project.status)}
+                        {project.status}
+                      </div>
                     </Badge>
                   </div>
                   <p className="text-gray-600 mb-3">{project.description}</p>
@@ -89,19 +138,19 @@ const ProjectsPopup: React.FC<ProjectsPopupProps> = ({
                   </div>
                 </div>
                 
-                <Button
+                {/* <Button
                   onClick={() => console.log('View project details:', project.id)}
                   className="ml-4"
                 >
                   View Details
-                </Button>
+                </Button> */}
               </div>
             </div>
           ))}
           
-          {activeProjects.length === 0 && (
+          {filteredProjects.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No ongoing projects
+              No projects found in this category
             </div>
           )}
         </div>

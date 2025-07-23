@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Share2, Plus, Calendar, Image, Link, Edit, Trash2 } from 'lucide-react';
+import { Share2, Plus, Calendar, Image, Link, Edit, Trash2, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,13 +8,31 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
-import { toast } from '../ui/use-toast';
+import { database } from '../../firebase';
+import { ref, onValue, query, orderByChild, set, push, remove } from 'firebase/database';
+import { toast } from 'react-hot-toast';
+
+interface SocialMediaPost {
+  id: string;
+  platform: string;
+  content: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  postUrl?: string;
+  imageUrl?: string;
+  status: string;
+  createdBy: string;
+  createdByName: string;
+  department: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 const SocialMediaCalendar = () => {
   const { user } = useAuth();
-  const [posts, setPosts] = useState([]);
+  const [posts, setPosts] = useState<SocialMediaPost[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingPost, setEditingPost] = useState(null);
+  const [editingPost, setEditingPost] = useState<SocialMediaPost | null>(null);
   const [formData, setFormData] = useState({
     platform: '',
     content: '',
@@ -25,17 +42,125 @@ const SocialMediaCalendar = () => {
     imageUrl: '',
     status: 'scheduled'
   });
+  const [loading, setLoading] = useState(true);
+  const [notificationPermission, setNotificationPermission] = useState('default');
 
   const platforms = ['Facebook', 'Instagram', 'Twitter', 'LinkedIn', 'YouTube', 'TikTok'];
   const statuses = ['scheduled', 'published', 'draft'];
 
+  // Check and request notification permission
   useEffect(() => {
-    const savedPosts = JSON.parse(localStorage.getItem('social_media_posts') || '[]');
-    // Filter posts by current user if they're from Digital Marketing
-    const userPosts = user?.department === 'Digital Marketing' 
-      ? savedPosts.filter(post => post.createdBy === user.email)
-      : [];
-    setPosts(userPosts);
+    if (!('Notification' in window)) {
+      console.log('This browser does not support desktop notification');
+      return;
+    }
+
+    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    } else {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
+
+  // Check for posts scheduled for today
+  useEffect(() => {
+    if (posts.length === 0 || notificationPermission !== 'granted') return;
+
+    const today = new Date();
+    const todayDateString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
+    const todayPosts = posts.filter(post => {
+      return (
+        post.scheduledDate === todayDateString && 
+        post.status === 'scheduled'
+      );
+    });
+
+    if (todayPosts.length > 0) {
+      showScheduledPostsNotification(todayPosts);
+    }
+
+    // Set up interval to check for upcoming posts every hour
+    const checkInterval = setInterval(() => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      todayPosts.forEach(post => {
+        const [hours, minutes] = post.scheduledTime.split(':').map(Number);
+        // Notify 15 minutes before scheduled time
+        if (
+          currentHour === hours && 
+          currentMinute >= minutes - 15 && 
+          currentMinute < minutes
+        ) {
+          showUpcomingPostNotification(post);
+        }
+      });
+    }, 60000); // Check every minute
+
+    return () => clearInterval(checkInterval);
+  }, [posts, notificationPermission]);
+
+  const showScheduledPostsNotification = (posts: SocialMediaPost[]) => {
+    if (notificationPermission !== 'granted') return;
+
+    const notificationOptions = {
+      body: `You have ${posts.length} post(s) scheduled for today.`,
+      icon: '/notification-icon.png', // Replace with your icon path
+      tag: 'today-posts-notification'
+    };
+
+    new Notification('Scheduled Posts Reminder', notificationOptions);
+  };
+
+  const showUpcomingPostNotification = (post: SocialMediaPost) => {
+    if (notificationPermission !== 'granted') return;
+
+    const notificationOptions = {
+      body: `Post scheduled for ${post.scheduledTime}: ${post.content.substring(0, 50)}...`,
+      icon: '/notification-icon.png', // Replace with your icon path
+      tag: 'upcoming-post-notification'
+    };
+
+    new Notification(`Upcoming ${post.platform} Post`, notificationOptions);
+  };
+
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid) {
+      console.error("User ID or Admin UID not available");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const postsRef = ref(database, `users/${user.adminUid}/employees/${user.id}/socialmedia`);
+    const postsQuery = query(postsRef, orderByChild('createdAt'));
+
+    const unsubscribe = onValue(postsQuery, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const postsArray: SocialMediaPost[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<SocialMediaPost, 'id'>)
+          })).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          
+          setPosts(postsArray);
+        } else {
+          setPosts([]);
+        }
+      } catch (error) {
+        console.error("Error fetching social media posts:", error);
+        toast.error("Failed to load social media posts");
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   const resetForm = () => {
@@ -52,43 +177,50 @@ const SocialMediaCalendar = () => {
     setEditingPost(null);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const newPost = {
-      id: editingPost ? editingPost.id : Date.now().toString(),
-      ...formData,
-      createdBy: user?.email,
-      createdByName: user?.name,
-      department: user?.department,
-      createdAt: editingPost ? editingPost.createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    try {
+      const newPost = {
+        ...formData,
+        createdBy: user?.email || '',
+        createdByName: user?.name || '',
+        department: user?.department || '',
+        createdAt: editingPost ? editingPost.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-    const allPosts = JSON.parse(localStorage.getItem('social_media_posts') || '[]');
-    let updatedPosts;
-    
-    if (editingPost) {
-      updatedPosts = allPosts.map(post => post.id === editingPost.id ? newPost : post);
-    } else {
-      updatedPosts = [...allPosts, newPost];
+      if (editingPost) {
+        // Update existing post
+        const postRef = ref(database, `users/${user?.adminUid}/employees/${user?.id}/socialmedia/${editingPost.id}`);
+        await set(postRef, newPost);
+        toast.success("Post updated successfully");
+      } else {
+        // Create new post
+        const postsRef = ref(database, `users/${user?.adminUid}/employees/${user?.id}/socialmedia`);
+        const newPostRef = push(postsRef);
+        await set(newPostRef, newPost);
+        toast.success("Post scheduled successfully");
+
+        // Show notification if scheduled for today
+        if (newPost.scheduledDate === new Date().toISOString().split('T')[0]) {
+          if (notificationPermission === 'granted') {
+            new Notification('Post Scheduled', {
+              body: `Your ${newPost.platform} post has been scheduled for today at ${newPost.scheduledTime}`,
+              icon: '/notification-icon.png'
+            });
+          }
+        }
+      }
+      
+      resetForm();
+    } catch (error) {
+      console.error("Error saving post:", error);
+      toast.error("Failed to save post");
     }
-    
-    localStorage.setItem('social_media_posts', JSON.stringify(updatedPosts));
-    
-    // Update local state
-    const userPosts = updatedPosts.filter(post => post.createdBy === user?.email);
-    setPosts(userPosts);
-    
-    toast({
-      title: editingPost ? "Post Updated" : "Post Scheduled",
-      description: `Social media post has been ${editingPost ? 'updated' : 'scheduled'} successfully.`
-    });
-    
-    resetForm();
   };
 
-  const handleEdit = (post) => {
+  const handleEdit = (post: SocialMediaPost) => {
     setFormData({
       platform: post.platform,
       content: post.content,
@@ -102,22 +234,30 @@ const SocialMediaCalendar = () => {
     setShowAddForm(true);
   };
 
-  const handleDelete = (postId) => {
-    const allPosts = JSON.parse(localStorage.getItem('social_media_posts') || '[]');
-    const updatedPosts = allPosts.filter(post => post.id !== postId);
-    localStorage.setItem('social_media_posts', JSON.stringify(updatedPosts));
-    
-    const userPosts = updatedPosts.filter(post => post.createdBy === user?.email);
-    setPosts(userPosts);
-    
-    toast({
-      title: "Post Deleted",
-      description: "Social media post has been deleted successfully."
+  const handleDelete = async (postId: string) => {
+    try {
+      const postRef = ref(database, `users/${user?.adminUid}/employees/${user?.id}/socialmedia/${postId}`);
+      await remove(postRef);
+      toast.success("Post deleted successfully");
+    } catch (error) {
+      console.error("Error deleting post:", error);
+      toast.error("Failed to delete post");
+    }
+  };
+
+  const requestNotificationPermission = () => {
+    Notification.requestPermission().then(permission => {
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        toast.success('Notification permission granted!');
+      } else {
+        toast.error('You need to allow notifications for this feature');
+      }
     });
   };
 
-  const getPlatformColor = (platform) => {
-    const colors = {
+  const getPlatformColor = (platform: string) => {
+    const colors: Record<string, string> = {
       'Facebook': 'bg-blue-100 text-blue-700',
       'Instagram': 'bg-pink-100 text-pink-700',
       'Twitter': 'bg-sky-100 text-sky-700',
@@ -128,7 +268,7 @@ const SocialMediaCalendar = () => {
     return colors[platform] || 'bg-gray-100 text-gray-700';
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled': return 'bg-yellow-100 text-yellow-700';
       case 'published': return 'bg-green-100 text-green-700';
@@ -161,6 +301,14 @@ const SocialMediaCalendar = () => {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <motion.div
@@ -172,10 +320,22 @@ const SocialMediaCalendar = () => {
           <h1 className="text-2xl font-bold text-gray-800">Social Media Calendar</h1>
           <p className="text-gray-600">Schedule and manage your social media posts</p>
         </div>
-        <Button onClick={() => setShowAddForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Schedule Post
-        </Button>
+        <div className="flex gap-2">
+          {notificationPermission !== 'granted' && (
+            <Button 
+              variant="outline" 
+              onClick={requestNotificationPermission}
+              className="flex items-center gap-2"
+            >
+              <Bell className="h-4 w-4" />
+              Enable Notifications
+            </Button>
+          )}
+          <Button onClick={() => setShowAddForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Schedule Post
+          </Button>
+        </div>
       </motion.div>
 
       {/* Stats Cards */}
@@ -267,7 +427,11 @@ const SocialMediaCalendar = () => {
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select value={formData.platform} onValueChange={(value) => setFormData({...formData, platform: value})}>
+                  <Select 
+                    value={formData.platform} 
+                    onValueChange={(value) => setFormData({...formData, platform: value})}
+                    required
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Platform" />
                     </SelectTrigger>
@@ -278,7 +442,11 @@ const SocialMediaCalendar = () => {
                     </SelectContent>
                   </Select>
                   
-                  <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value})}>
+                  <Select 
+                    value={formData.status} 
+                    onValueChange={(value) => setFormData({...formData, status: value})}
+                    required
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>

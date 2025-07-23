@@ -1,114 +1,343 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FolderOpen, Calendar, Target, Upload, MessageSquare, Bell } from 'lucide-react';
+import { 
+  FolderOpen, Calendar, Target, MessageSquare, 
+  CheckCircle, AlertCircle, Clock, ChevronDown, ChevronUp,
+  ChevronRight, Save, X,
+  Edit
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 import { Textarea } from '../ui/textarea';
 import { useAuth } from '../../hooks/useAuth';
-import { toast } from '../ui/use-toast';
-import NotificationSystem from './NotificationSystem';
+import { database } from '../../firebase';
+import { ref, onValue, update, push, set } from 'firebase/database';
+import { toast } from 'react-hot-toast';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  department: string;
+  startDate: string;
+  endDate: string;
+  priority: string;
+  status: string;
+  progress: number;
+  tasks: Record<string, Task>;
+  assignedTeamLeader?: string;
+  assignedEmployees?: string[];
+}
+
+interface TaskUpdate {
+  timestamp: string;
+  updatedBy: string;
+  updatedById: string;
+  changes: {
+    field: string;
+    oldValue: any;
+    newValue: any;
+  }[];
+  note?: string;
+}
+
+interface Comment {
+  text: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  projectId: string;
+  dueDate: string;
+  priority: string;
+  status: string;
+  updates?: Record<string, TaskUpdate>;
+  comments?: Record<string, Comment>;
+}
 
 const EmployeeProjects = () => {
   const { user } = useAuth();
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [updateNote, setUpdateNote] = useState('');
+  const [isTeamLead, setIsTeamLead] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [newTaskStatus, setNewTaskStatus] = useState<string>('');
+  const [taskComment, setTaskComment] = useState<string>('');
 
   useEffect(() => {
-    const allProjects = JSON.parse(localStorage.getItem('projects') || '[]');
-    // Filter projects assigned to current user or their department
-    const userProjects = allProjects.filter(project => 
-      (project.assignedEmployees && project.assignedEmployees.includes(user?.id)) ||
-      project.department === user?.department
-    );
-    setProjects(userProjects);
+    if (!user?.adminUid || !user?.id) return;
+    
+    const employeeRef = ref(database, `users/${user.adminUid}/employees/${user.id}`);
+    onValue(employeeRef, (snapshot) => {
+      const data = snapshot.val();
+      setIsTeamLead(data?.designation === 'Team Lead');
+    });
   }, [user]);
 
-  const updateProjectProgress = (projectId, newProgress, note) => {
-    const allProjects = JSON.parse(localStorage.getItem('projects') || '[]');
-    const updatedProjects = allProjects.map(project => {
-      if (project.id === projectId) {
-        const updates = {
-          ...project,
-          progress: newProgress,
-          lastUpdated: new Date().toISOString(),
-          updates: [
-            ...(project.updates || []),
-            {
-              id: Date.now().toString(),
-              note,
-              progress: newProgress,
-              updatedBy: user?.name,
-              updatedAt: new Date().toISOString()
-            }
-          ]
-        };
-        
-        // Auto-update status based on progress
-        if (newProgress === 100) {
-          updates.status = 'completed';
-        } else if (newProgress > 0) {
-          updates.status = 'in_progress';
-        }
-        
-        // Send notification to admin about progress update
-        const adminNotification = {
-          id: Date.now().toString(),
-          type: 'progress_update',
-          title: 'Project Progress Updated',
-          message: `${user?.name} updated progress on project: ${project.name} (${newProgress}%)`,
-          projectId: project.id,
-          employeeId: user?.id,
-          timestamp: new Date().toISOString(),
-          read: false
-        };
-        
-        // Save admin notification (in real app, send to all admins)
-        const adminNotifications = JSON.parse(localStorage.getItem('admin_notifications') || '[]');
-        adminNotifications.push(adminNotification);
-        localStorage.setItem('admin_notifications', JSON.stringify(adminNotifications));
-        
-        return updates;
-      }
-      return project;
-    });
-    
-    localStorage.setItem('projects', JSON.stringify(updatedProjects));
-    
-    // Update local state
-    const userProjects = updatedProjects.filter(project => 
-      (project.assignedEmployees && project.assignedEmployees.includes(user?.id)) ||
-      project.department === user?.department
-    );
-    setProjects(userProjects);
-    
-    toast({
-      title: "Project Updated",
-      description: "Project progress has been updated successfully."
-    });
-    
-    setSelectedProject(null);
-    setUpdateNote('');
-  };
-
-  const handleProgressUpdate = (project) => {
-    if (!updateNote.trim()) {
-      toast({
-        title: "Update Required",
-        description: "Please provide an update note.",
-        variant: "destructive"
-      });
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid) {
+      setLoading(false);
       return;
     }
-    
-    // For demo, increment progress by 10%
-    const newProgress = Math.min(project.progress + 10, 100);
-    updateProjectProgress(project.id, newProgress, updateNote);
+
+    if (isTeamLead) {
+      // For team leads, fetch only projects where they are assigned as team lead
+      const projectsRef = ref(database, `users/${user.adminUid}/projects`);
+      const unsubscribeProjects = onValue(projectsRef, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            const allProjects: Project[] = Object.entries(data).map(([key, value]) => ({
+              id: key,
+              ...(value as Omit<Project, 'id'>),
+              progress: Number((value as any).progress) || 0,
+              tasks: (value as any).tasks || {}
+            }));
+
+            // Filter projects where this team lead is assigned
+            const teamLeadProjects = allProjects.filter(
+              project => project.assignedTeamLeader === user.id
+            );
+
+            setProjects(teamLeadProjects);
+          } else {
+            setProjects([]);
+          }
+          setLoading(false);
+        } catch (error) {
+          console.error("Error loading data:", error);
+          toast.error("Failed to load projects");
+          setLoading(false);
+        }
+      }, (error) => {
+        console.error("Error setting up listener:", error);
+        toast.error("Failed to load projects");
+        setLoading(false);
+      });
+
+      return () => unsubscribeProjects();
+    } else {
+      // For regular employees, get their assigned projects
+      const projectsRef = ref(database, `users/${user.adminUid}/employees/${user.id}/projects`);
+      const unsubscribeProjects = onValue(projectsRef, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            const projectsData: Project[] = Object.entries(data).map(([key, value]) => ({
+              id: key,
+              ...(value as Omit<Project, 'id'>),
+              progress: Number((value as any).progress) || 0,
+              tasks: (value as any).tasks || {}
+            }));
+            setProjects(projectsData);
+          } else {
+            setProjects([]);
+          }
+          setLoading(false);
+        } catch (error) {
+          console.error("Error loading data:", error);
+          toast.error("Failed to load projects");
+          setLoading(false);
+        }
+      }, (error) => {
+        console.error("Error setting up listener:", error);
+        toast.error("Failed to load projects");
+        setLoading(false);
+      });
+
+      return () => unsubscribeProjects();
+    }
+  }, [user, isTeamLead]);
+
+  const updateTaskStatus = async (projectId: string, taskId: string) => {
+    if (!user?.id || !user?.adminUid || !newTaskStatus) return;
+
+    try {
+      const timestamp = Date.now().toString();
+      const changes = [{
+        field: 'status',
+        oldValue: projects.find(p => p.id === projectId)?.tasks[taskId]?.status || '',
+        newValue: newTaskStatus
+      }];
+
+      const updateData: TaskUpdate = {
+        timestamp,
+        updatedBy: user.name || (isTeamLead ? 'Team Lead' : 'Employee'),
+        updatedById: user.id,
+        changes,
+        note: `Status updated by ${isTeamLead ? 'Team Lead' : 'Employee'}`
+      };
+
+      // Update task in employee's project
+      const employeeUpdates = {
+        [`tasks/${taskId}/status`]: newTaskStatus,
+        [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
+        [`tasks/${taskId}/updates/${timestamp}`]: updateData
+      };
+
+      await update(
+        ref(database, `users/${user.adminUid}/employees/${user.id}/projects/${projectId}`),
+        employeeUpdates
+      );
+
+      // Also update the task in admin's project
+      const adminUpdates = {
+        [`tasks/${taskId}/status`]: newTaskStatus,
+        [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
+        [`tasks/${taskId}/updates/${timestamp}`]: updateData
+      };
+
+      await update(
+        ref(database, `users/${user.adminUid}/projects/${projectId}`),
+        adminUpdates
+      );
+
+      // If team lead, update all team members' tasks
+      if (isTeamLead) {
+        const projectRef = ref(database, `users/${user.adminUid}/projects/${projectId}`);
+        const projectSnapshot = await get(projectRef);
+        const projectData = projectSnapshot.val();
+        
+        if (projectData.assignedEmployees) {
+          const updatePromises = projectData.assignedEmployees.map(employeeId => {
+            const employeeUpdates = {
+              [`tasks/${taskId}/status`]: newTaskStatus,
+              [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
+              [`tasks/${taskId}/updates/${timestamp}`]: updateData
+            };
+            return update(
+              ref(database, `users/${user.adminUid}/employees/${employeeId}/projects/${projectId}`),
+              employeeUpdates
+            );
+          });
+
+          await Promise.all(updatePromises);
+        }
+      }
+
+      // Update local state
+      setProjects(prev => 
+        prev.map(p => {
+          if (p.id !== projectId) return p;
+          
+          const updatedTasks = { ...p.tasks };
+          updatedTasks[taskId] = {
+            ...updatedTasks[taskId],
+            status: newTaskStatus,
+            updatedAt: new Date().toISOString(),
+            updates: {
+              ...(updatedTasks[taskId].updates || {}),
+              [timestamp]: updateData
+            }
+          };
+
+          return {
+            ...p,
+            tasks: updatedTasks
+          };
+        })
+      );
+
+      toast.success("Task status updated");
+      setEditingTaskId(null);
+      setNewTaskStatus('');
+    } catch (error) {
+      console.error("Error updating task:", error);
+      toast.error("Failed to update task status");
+    }
   };
 
-  const getPriorityColor = (priority) => {
+  const addTaskComment = async (projectId: string, taskId: string) => {
+    if (!user?.id || !user?.adminUid || !taskComment.trim()) {
+      toast.error("Please enter a comment");
+      return;
+    }
+
+    try {
+      const timestamp = Date.now().toString();
+      const commentData = {
+        text: taskComment,
+        createdAt: new Date().toISOString(),
+        createdBy: user.name || (isTeamLead ? 'Team Lead' : 'Employee')
+      };
+
+      // Add to admin's project first
+      const adminCommentRef = ref(
+        database,
+        `users/${user.adminUid}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
+      );
+      await set(adminCommentRef, commentData);
+
+      // Add to employee's project
+      const employeeCommentRef = ref(
+        database,
+        `users/${user.adminUid}/employees/${user.id}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
+      );
+      await set(employeeCommentRef, commentData);
+
+      // If team lead, add to all team members' tasks
+      if (isTeamLead) {
+        const projectRef = ref(database, `users/${user.adminUid}/projects/${projectId}`);
+        const projectSnapshot = await get(projectRef);
+        const projectData = projectSnapshot.val();
+        
+        if (projectData.assignedEmployees) {
+          const updatePromises = projectData.assignedEmployees.map(employeeId => {
+            const employeeCommentRef = ref(
+              database,
+              `users/${user.adminUid}/employees/${employeeId}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
+            );
+            return set(employeeCommentRef, commentData);
+          });
+
+          await Promise.all(updatePromises);
+        }
+      }
+
+      // Update local state
+      setProjects(prev => 
+        prev.map(p => {
+          if (p.id !== projectId) return p;
+          
+          const updatedTasks = { ...p.tasks };
+          if (!updatedTasks[taskId].comments) {
+            updatedTasks[taskId].comments = {};
+          }
+          updatedTasks[taskId].comments[timestamp] = commentData;
+
+          return {
+            ...p,
+            tasks: updatedTasks
+          };
+        })
+      );
+
+      toast.success("Comment added successfully");
+      setTaskComment('');
+    } catch (error) {
+      console.error("Error adding comment:", error);
+      toast.error("Failed to add comment");
+    }
+  };
+
+  const toggleProjectExpand = (projectId: string) => {
+    setExpandedProjects(prev => ({
+      ...prev,
+      [projectId]: !prev[projectId]
+    }));
+  };
+
+  const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'low': return 'bg-blue-100 text-blue-700';
       case 'medium': return 'bg-yellow-100 text-yellow-700';
@@ -118,7 +347,7 @@ const EmployeeProjects = () => {
     }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'not_started': return 'bg-gray-100 text-gray-700';
       case 'in_progress': return 'bg-blue-100 text-blue-700';
@@ -128,16 +357,58 @@ const EmployeeProjects = () => {
     }
   };
 
-  const getProjectStats = () => {
-    const total = projects.length;
-    const completed = projects.filter(p => p.status === 'completed').length;
-    const inProgress = projects.filter(p => p.status === 'in_progress').length;
-    const notStarted = projects.filter(p => p.status === 'not_started').length;
-    
-    return { total, completed, inProgress, notStarted };
+  const getTaskStatusColor = (status: string) => {
+    switch (status) {
+      case 'not_started': return 'bg-gray-100 text-gray-700';
+      case 'in_progress': return 'bg-blue-100 text-blue-700';
+      case 'completed': return 'bg-green-100 text-green-700';
+      case 'overdue': return 'bg-red-100 text-red-700';
+      case 'pending': return 'bg-purple-100 text-purple-700';
+      case 'having_issue': return 'bg-orange-100 text-orange-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
   };
 
-  const stats = getProjectStats();
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'No date';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const isTaskOverdue = (dueDate: string) => {
+    if (!dueDate) return false;
+    return new Date(dueDate) < new Date();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8 text-red-500">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -147,229 +418,254 @@ const EmployeeProjects = () => {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">My Projects</h1>
-          <p className="text-gray-600">View and update your assigned projects</p>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {isTeamLead ? 'Team Projects' : 'My Projects'}
+          </h1>
+          <p className="text-gray-600">
+            {isTeamLead ? 'View and manage your team projects' : 'View and update your assigned projects and tasks'}
+          </p>
         </div>
-        <NotificationSystem />
       </motion.div>
 
-      {/* Project Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-blue-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Total Projects</p>
-                  <p className="text-xl font-bold">{stats.total}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-green-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Completed</p>
-                  <p className="text-xl font-bold text-green-600">{stats.completed}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                <div>
-                  <p className="text-sm text-gray-600">In Progress</p>
-                  <p className="text-xl font-bold text-blue-600">{stats.inProgress}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.4 }}
-        >
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="h-4 w-4 text-gray-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Not Started</p>
-                  <p className="text-xl font-bold text-gray-600">{stats.notStarted}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Projects List */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
+      {projects.length === 0 ? (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              My Projects ({projects.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {projects.map((project, index) => (
-                <motion.div
-                  key={project.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="border rounded-lg p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold text-lg">{project.name}</h3>
-                          <Badge className={getPriorityColor(project.priority)}>
-                            {project.priority}
-                          </Badge>
-                          <Badge className={getStatusColor(project.status)} variant="outline">
-                            {project.status.replace('_', ' ').charAt(0).toUpperCase() + project.status.replace('_', ' ').slice(1)}
-                          </Badge>
-                          {project.assignedEmployees && project.assignedEmployees.includes(user?.id) && (
-                            <Badge variant="outline" className="bg-green-50 text-green-700">
-                              <Bell className="h-3 w-3 mr-1" />
-                              Assigned to you
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <p className="text-gray-600 mb-3">{project.description}</p>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-500 mb-3">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            <span>Start: {new Date(project.startDate).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            <span>End: {new Date(project.endDate).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Target className="h-3 w-3" />
-                            <span>Department: {project.department}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Progress Section */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">Progress</span>
-                        <span className="text-sm text-gray-600">{project.progress}%</span>
-                      </div>
-                      <Progress value={project.progress} className="h-2" />
-                    </div>
-                    
-                    {/* Update Section */}
-                    {selectedProject === project.id ? (
-                      <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
-                        <Textarea
-                          placeholder="Provide an update on your progress..."
-                          value={updateNote}
-                          onChange={(e) => setUpdateNote(e.target.value)}
-                        />
-                        <div className="flex gap-2">
-                          <Button onClick={() => handleProgressUpdate(project)} size="sm">
-                            <Upload className="h-3 w-3 mr-1" />
-                            Update Progress
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              setSelectedProject(null);
-                              setUpdateNote('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between items-center">
-                        <div className="text-xs text-gray-500">
-                          {project.lastUpdated && (
-                            <span>Last updated: {new Date(project.lastUpdated).toLocaleDateString()}</span>
-                          )}
-                        </div>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => setSelectedProject(project.id)}
-                          disabled={project.status === 'completed'}
-                        >
-                          <MessageSquare className="h-3 w-3 mr-1" />
-                          Add Update
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {/* Recent Updates */}
-                    {project.updates && project.updates.length > 0 && (
-                      <div className="border-t pt-3">
-                        <h4 className="text-sm font-medium mb-2">Recent Updates</h4>
-                        <div className="space-y-2">
-                          {project.updates.slice(-2).map((update) => (
-                            <div key={update.id} className="text-xs bg-blue-50 p-2 rounded">
-                              <p className="text-gray-700">{update.note}</p>
-                              <p className="text-gray-500 mt-1">
-                                {update.updatedBy} • {new Date(update.updatedAt).toLocaleDateString()} • Progress: {update.progress}%
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-              {projects.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  No projects assigned to you yet
-                </div>
-              )}
-            </div>
+          <CardContent className="text-center py-12">
+            <FolderOpen className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-4 text-lg font-medium text-gray-900">
+              {isTeamLead ? 'No team projects assigned' : 'No projects assigned'}
+            </h3>
+            <p className="mt-1 text-gray-500">
+              {isTeamLead ? 'You are not assigned as team lead for any projects' : 'You don\'t have any projects assigned to you yet'}
+            </p>
           </CardContent>
         </Card>
-      </motion.div>
+      ) : (
+        <div className="space-y-4">
+          {projects.map((project) => {
+            const tasksArray = Object.values(project.tasks);
+            const completedTasksCount = tasksArray.filter(task => task.status === 'completed').length;
+            const totalTasksCount = tasksArray.length;
+            const progress = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+
+            return (
+              <Card key={project.id}>
+                <CardContent className="p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-bold">{project.name}</h3>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <Badge className={getPriorityColor(project.priority)}>
+                          {project.priority} priority
+                        </Badge>
+                        <Badge className={getStatusColor(project.status)}>
+                          {project.status.replace('_', ' ')}
+                        </Badge>
+                        <Badge variant="outline">
+                          {project.department}
+                        </Badge>
+                        {isTeamLead && (
+                          <Badge variant="outline" className="bg-purple-100 text-purple-700">
+                            Team Lead
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500 text-right">
+                      {project.startDate && <div>Start: {formatDate(project.startDate)}</div>}
+                      {project.endDate && <div>End: {formatDate(project.endDate)}</div>}
+                    </div>
+                  </div>
+
+                  {project.description && <p className="text-gray-600">{project.description}</p>}
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Overall Progress</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <Progress value={progress} />
+                  </div>
+
+                  {tasksArray.length > 0 && (
+                    <div className="border-t pt-3">
+                      <Collapsible>
+                        <CollapsibleTrigger 
+                          className="w-full flex items-center justify-between p-2 hover:bg-gray-50 rounded-md"
+                          onClick={() => toggleProjectExpand(project.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">Tasks ({tasksArray.length})</span>
+                          </div>
+                          {expandedProjects[project.id] ? 
+                            <ChevronUp className="h-4 w-4" /> : 
+                            <ChevronDown className="h-4 w-4" />
+                          }
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pt-2">
+                          <div className="space-y-4">
+                            {tasksArray.map(task => {
+                              const status = isTaskOverdue(task.dueDate) && task.status !== 'completed' ? 
+                                'overdue' : task.status || 'not_started';
+                              const taskUpdates = task.updates 
+                                ? Object.entries(task.updates)
+                                    .sort(([a], [b]) => parseInt(b) - parseInt(a))
+                                    .map(([timestamp, update]) => ({ timestamp, ...update }))
+                                : [];
+                              const comments = task.comments 
+                                ? Object.entries(task.comments)
+                                    .sort(([a], [b]) => parseInt(b) - parseInt(a))
+                                    .map(([timestamp, comment]) => ({ timestamp, ...comment }))
+                                : [];
+
+                              return (
+                                <div key={task.id} className="border rounded-lg p-4 space-y-3">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h4 className="font-medium">{task.title || 'Untitled Task'}</h4>
+                                      {task.description && (
+                                        <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Badge className={getTaskStatusColor(status)}>
+                                        {status.replace('_', ' ')}
+                                      </Badge>
+                                      <div className="text-right text-sm text-gray-500">
+                                        {task.dueDate && (
+                                          <>
+                                            <div>Due: {formatDate(task.dueDate)}</div>
+                                            <div>{formatTime(task.dueDate)}</div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="border-t pt-3">
+                                    {editingTaskId === task.id ? (
+                                      <div className="space-y-3">
+                                        <div className="flex items-center gap-2">
+                                          <Select 
+                                            value={newTaskStatus || task.status}
+                                            onValueChange={(value) => setNewTaskStatus(value)}
+                                          >
+                                            <SelectTrigger className="w-[180px]">
+                                              <SelectValue placeholder="Select status" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="not_started">Not Started</SelectItem>
+                                              <SelectItem value="in_progress">In Progress</SelectItem>
+                                              <SelectItem value="completed">Completed</SelectItem>
+                                              <SelectItem value="pending">Pending</SelectItem>
+                                              <SelectItem value="having_issue">Having Issue</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          <Button 
+                                            size="sm" 
+                                            onClick={() => updateTaskStatus(project.id, task.id)}
+                                          >
+                                            <Save className="h-4 w-4 mr-1" />
+                                            Save
+                                          </Button>
+                                          <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={() => {
+                                              setEditingTaskId(null);
+                                              setNewTaskStatus('');
+                                            }}
+                                          >
+                                            <X className="h-4 w-4 mr-1" />
+                                            Cancel
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => {
+                                          setEditingTaskId(task.id);
+                                          setNewTaskStatus(task.status || 'not_started');
+                                        }}
+                                      >
+                                        <Edit className="h-4 w-4 mr-1" />
+                                        Update Status
+                                      </Button>
+                                    )}
+                                  </div>
+
+                                  {/* Task Updates */}
+                                  {taskUpdates.length > 0 && (
+                                    <div className="border-t pt-3">
+                                      <h4 className="text-sm font-medium mb-2">Update History</h4>
+                                      <div className="space-y-2">
+                                        {taskUpdates.map((update, idx) => (
+                                          <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
+                                            <div className="flex justify-between">
+                                              <span className="font-medium">{update.updatedBy}</span>
+                                              <span className="text-gray-500">{formatDate(update.timestamp)} {formatTime(update.timestamp)}</span>
+                                            </div>
+                                            <div className="mt-1">
+                                              {update.changes.map((change, i) => (
+                                                <p key={i}>
+                                                  Changed <span className="font-medium">{change.field}</span> from 
+                                                  <span className="italic"> "{change.oldValue}"</span> to 
+                                                  <span className="font-medium"> "{change.newValue}"</span>
+                                                </p>
+                                              ))}
+                                            </div>
+                                            {update.note && (
+                                              <p className="mt-1 italic">Note: "{update.note}"</p>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Task Comments */}
+                                  <div className="border-t pt-3">
+                                    <h4 className="text-sm font-medium mb-2">Comments</h4>
+                                    <div className="space-y-3">
+                                      {comments.map((comment, idx) => (
+                                        <div key={idx} className="text-sm bg-gray-50 p-3 rounded-lg">
+                                          <p className="text-gray-700">{comment.text}</p>
+                                          <p className="text-xs text-gray-500 mt-1">
+                                            {comment.createdBy} • {formatDate(comment.createdAt)} • {formatTime(comment.createdAt)}
+                                          </p>
+                                        </div>
+                                      ))}
+                                      <div className="space-y-2">
+                                        <Textarea
+                                          placeholder="Add a comment..."
+                                          value={taskComment}
+                                          onChange={(e) => setTaskComment(e.target.value)}
+                                        />
+                                        <Button 
+                                          size="sm"
+                                          onClick={() => addTaskComment(project.id, task.id)}
+                                        >
+                                          <MessageSquare className="h-4 w-4 mr-1" />
+                                          Add Comment
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

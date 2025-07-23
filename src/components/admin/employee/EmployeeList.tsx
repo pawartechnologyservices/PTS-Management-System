@@ -8,6 +8,8 @@ import { Eye, Edit, Trash2, Mail, Phone, User } from 'lucide-react';
 import { ref, onValue, off, update, remove } from 'firebase/database';
 import { database } from '../../../firebase';
 import { useAuth } from '../../../hooks/useAuth';
+import { deleteUser, getAuth } from 'firebase/auth';
+import { toast } from '@/hooks/use-toast';
 
 interface Employee {
   id: string;
@@ -103,21 +105,61 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   };
 
   // Delete employee
-  const handleDeleteEmployee = async (employeeId: string) => {
-    if (!user || !window.confirm('Are you sure you want to delete this employee?')) return;
+ const handleDeleteEmployee = async (employeeId: string) => {
+  if (!user || !window.confirm('Are you sure you want to delete this employee?')) return;
+  
+  try {
+    // Get the employee email before deleting
+    const employee = employees.find(e => e.id === employeeId);
+    if (!employee) return;
+
+    // Delete from admin's employee list
+    const employeeRef = ref(database, `users/${user.id}/employees/${employeeId}`);
+    await remove(employeeRef);
     
-    try {
-      // Delete from admin's employee list
-      const employeeRef = ref(database, `users/${user.id}/employees/${employeeId}`);
-      await remove(employeeRef);
-      
-      // Optionally: Also delete the employee's auth account and self-reference
-      // This would require additional Firebase Auth logic
-    } catch (err) {
-      console.error('Error deleting employee:', err);
-      setError('Failed to delete employee');
+    // Delete the employee's auth account
+    const auth = getAuth();
+    const employeeUser = await fetchUserByEmail(employee.email);
+    if (employeeUser) {
+      await deleteUser(employeeUser);
     }
-  };
+
+    // Delete the employee's self-reference if it exists
+    const employeeSelfRef = ref(database, `users/${employeeId}`);
+    await remove(employeeSelfRef);
+    
+    toast({
+      title: "Success",
+      description: "Employee deleted successfully",
+    });
+  } catch (err) {
+    console.error('Error deleting employee:', err);
+    setError('Failed to delete employee');
+    toast({
+      title: "Error",
+      description: "Failed to delete employee",
+      variant: "destructive",
+    });
+  }
+};
+
+// Helper function to fetch user by email
+const fetchUserByEmail = async (email: string) => {
+  const auth = getAuth();
+  try {
+    const userMethods = await import('firebase/auth');
+    return await userMethods.fetchSignInMethodsForEmail(auth, email)
+      .then((methods) => {
+        if (methods.length > 0) {
+          return { email }; // Return user info if exists
+        }
+        return null;
+      });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    return null;
+  }
+};
 
   // Search/filter function (you can expand this)
   const handleSearch = (searchTerm: string) => {

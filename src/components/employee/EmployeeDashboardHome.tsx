@@ -10,14 +10,20 @@ import {
   TrendingUp,
   AlertCircle,
   Coffee,
-  Target
+  Target,
+  Video,
+  MapPin,
+  AlertTriangle,
+  XCircle,
+  Download
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
-import { ref, push, set, onValue, update, get } from 'firebase/database';
+import { ref, push, set, onValue, update, get, query, orderByChild } from 'firebase/database';
 import { toast } from 'react-hot-toast';
 
 interface AttendanceRecord {
@@ -30,8 +36,44 @@ interface AttendanceRecord {
   status: string;
   workMode: string;
   timestamp: number;
+  totalHours?: string;
+  markedLateBy?: string;
+  markedLateAt?: string;
+  department?: string;
+  designation?: string;
+}
+
+interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
   department: string;
-  designation: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  appliedAt: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  approvedBy?: string;
+}
+
+interface Meeting {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: string;
+  type: 'common' | 'department';
+  department?: string;
+  meetingLink?: string;
+  agenda?: string;
+  createdAt?: number;
+  employeeId?: string;
+  employeeName?: string;
 }
 
 const EmployeeDashboardHome = () => {
@@ -42,8 +84,19 @@ const EmployeeDashboardHome = () => {
     attendanceRate: 0,
     leavesUsed: 0,
     activeProjects: 0,
-    upcomingMeetings: 0
+    upcomingMeetings: 0,
+    presentDays: 0,
+    totalDays: 0
   });
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [isTeamLead, setIsTeamLead] = useState(false);
+
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   const [quickActions] = useState([
     { icon: Clock, label: 'Mark Attendance', color: 'bg-blue-600 hover:bg-blue-700' },
@@ -52,19 +105,216 @@ const EmployeeDashboardHome = () => {
     { icon: Calendar, label: 'My Meetings', color: 'bg-orange-600 hover:bg-orange-700' },
   ]);
 
-  const [upcomingMeetings] = useState([
-    { id: 1, title: 'Team Standup', time: '09:00 AM', date: 'Today' },
-    { id: 2, title: 'Project Review', time: '02:00 PM', date: 'Today' },
-    { id: 3, title: 'Client Meeting', time: '10:00 AM', date: 'Tomorrow' },
-  ]);
-
   const [recentActivities] = useState([
     { id: 1, action: 'Submitted project milestone', time: '2 hours ago', type: 'project' },
     { id: 2, action: 'Marked attendance', time: 'This morning', type: 'attendance' },
     { id: 3, action: 'Completed task review', time: 'Yesterday', type: 'task' },
   ]);
 
-  const loadAttendanceData = async () => {
+  // Check if user is team lead
+  useEffect(() => {
+    if (!user?.adminUid || !user?.id) return;
+    
+    const employeeRef = ref(database, `users/${user.adminUid}/employees/${user.id}`);
+    const unsubscribe = onValue(employeeRef, (snapshot) => {
+      const data = snapshot.val();
+      setIsTeamLead(data?.designation === 'Team Lead');
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch attendance records and calculate rate
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid) {
+      setLoading(false);
+      return;
+    }
+
+    const attendanceRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching`);
+    const attendanceQuery = query(attendanceRef, orderByChild('timestamp'));
+
+    const unsubscribe = onValue(attendanceQuery, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<AttendanceRecord, 'id'>)
+          })).sort((a, b) => b.timestamp - a.timestamp);
+
+          setAttendanceRecords(records);
+          
+          // Calculate attendance rate for current month
+          const now = new Date();
+          const currentMonth = now.getMonth();
+          const currentYear = now.getFullYear();
+          
+          const monthlyRecords = records.filter(record => {
+            if (!record.date) return false;
+            const recordDate = new Date(record.date);
+            return recordDate.getMonth() === currentMonth && 
+                   recordDate.getFullYear() === currentYear;
+          });
+
+          const presentDays = monthlyRecords.filter(record => record.status === 'present').length;
+          const totalDays = monthlyRecords.length;
+          const attendanceRate = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+          setStats(prev => ({
+            ...prev,
+            attendanceRate,
+            presentDays,
+            totalDays
+          }));
+        } else {
+          setAttendanceRecords([]);
+          setStats(prev => ({
+            ...prev,
+            attendanceRate: 0,
+            presentDays: 0,
+            totalDays: 0
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching attendance data:", error);
+        toast.error("Failed to load attendance records");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch project count
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid) return;
+
+    const fetchProjectCount = async () => {
+      try {
+        let projectCount = 0;
+        
+        if (isTeamLead) {
+          // Count projects where user is team lead
+          const projectsRef = ref(database, `users/${user.adminUid}/projects`);
+          const projectsSnapshot = await get(projectsRef);
+          
+          if (projectsSnapshot.exists()) {
+            const projectsData = projectsSnapshot.val();
+            projectCount = Object.values(projectsData)
+              .filter((project: any) => project.assignedTeamLeader === user.id)
+              .length;
+          }
+        } else {
+          // Count projects assigned to employee
+          const employeeProjectsRef = ref(database, `users/${user.adminUid}/employees/${user.id}/projects`);
+          const employeeProjectsSnapshot = await get(employeeProjectsRef);
+          projectCount = employeeProjectsSnapshot.exists() ? Object.keys(employeeProjectsSnapshot.val()).length : 0;
+        }
+
+        setStats(prev => ({
+          ...prev,
+          activeProjects: projectCount
+        }));
+      } catch (error) {
+        console.error("Error fetching project count:", error);
+        toast.error("Failed to load project count");
+      }
+    };
+
+    fetchProjectCount();
+  }, [user, isTeamLead]);
+
+  // Fetch upcoming meetings count
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid) {
+      setLoading(false);
+      return;
+    }
+
+    const meetingsRef = ref(database, `users/${user.adminUid}/employees/${user.id}/meetings`);
+    const meetingsQuery = query(meetingsRef, orderByChild('date'));
+
+    const unsubscribe = onValue(meetingsQuery, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const meetingsData: Meeting[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<Meeting, 'id'>)
+          }));
+
+          // Filter upcoming meetings
+          const now = new Date();
+          const upcoming = meetingsData.filter((meeting) => {
+            const meetingDateTime = new Date(`${meeting.date}T${meeting.time}`);
+            return meetingDateTime.getTime() > now.getTime();
+          });
+
+          setUpcomingMeetings(upcoming);
+          setStats(prev => ({
+            ...prev,
+            upcomingMeetings: upcoming.length
+          }));
+        } else {
+          setUpcomingMeetings([]);
+          setStats(prev => ({
+            ...prev,
+            upcomingMeetings: 0
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching meetings data:", error);
+        toast.error("Failed to load meetings");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const calculateLeaveDays = (startDate: string, endDate: string) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
+  };
+
+  const loadLeaveData = async () => {
+    if (!user?.id || !user?.adminUid) {
+      return;
+    }
+
+    try {
+      const leavesRef = ref(database, `users/${user.adminUid}/employees/${user.id}/leaves`);
+      const snapshot = await get(leavesRef);
+      const data = snapshot.val();
+      
+      if (data) {
+        const requests: LeaveRequest[] = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...(value as Omit<LeaveRequest, 'id'>)
+        }));
+        
+        // Calculate total approved leave days
+        const approvedDays = requests
+          .filter(req => req.status === 'approved')
+          .reduce((total, req) => total + calculateLeaveDays(req.startDate, req.endDate), 0);
+        
+        setLeaveRequests(requests);
+        setStats(prev => ({
+          ...prev,
+          leavesUsed: approvedDays
+        }));
+      } else {
+        setLeaveRequests([]);
+      }
+    } catch (error) {
+      console.error("Error loading leave data:", error);
+      toast.error("Failed to load leave data");
+    }
+  };
+
+  const loadTodayAttendance = async () => {
     if (!user?.id || !user?.adminUid) {
       setLoading(false);
       return;
@@ -96,22 +346,6 @@ const EmployeeDashboardHome = () => {
         });
         
         setTodayAttendance(todayRecord || null);
-        
-        // Calculate stats for the current month
-        const thisMonth = today.getMonth();
-        const thisYear = today.getFullYear();
-        const monthlyRecords = records.filter(record => {
-          const recordDate = new Date(record.date);
-          return recordDate.getMonth() === thisMonth && 
-                 recordDate.getFullYear() === thisYear;
-        });
-        
-        setStats({
-          attendanceRate: Math.round((monthlyRecords.length / 22) * 100),
-          leavesUsed: 3,
-          activeProjects: 2,
-          upcomingMeetings: upcomingMeetings.length
-        });
       } else {
         setTodayAttendance(null);
       }
@@ -155,7 +389,8 @@ const EmployeeDashboardHome = () => {
     let unsubscribe: () => void;
     
     const fetchData = async () => {
-      unsubscribe = await loadAttendanceData();
+      await loadLeaveData();
+      unsubscribe = await loadTodayAttendance();
     };
 
     fetchData();
@@ -241,6 +476,46 @@ const EmployeeDashboardHome = () => {
     visible: { opacity: 1, y: 0 }
   };
 
+  const isToday = (dateString: string) => {
+    const meetingDate = new Date(dateString);
+    const today = new Date();
+    return meetingDate.toDateString() === today.toDateString();
+  };
+
+  const isTomorrow = (dateString: string) => {
+    const meetingDate = new Date(dateString);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return meetingDate.toDateString() === tomorrow.toDateString();
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'present': return 'bg-green-100 text-green-700';
+      case 'absent': return 'bg-red-100 text-red-700';
+      case 'late': return 'bg-yellow-100 text-yellow-700';
+      case 'half-day': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'present': return <CheckCircle className="h-4 w-4" />;
+      case 'absent': return <XCircle className="h-4 w-4" />;
+      case 'late': return <AlertTriangle className="h-4 w-4" />;
+      default: return <Clock className="h-4 w-4" />;
+    }
+  };
+
+  if (loading && leaveRequests.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Welcome Header */}
@@ -268,7 +543,7 @@ const EmployeeDashboardHome = () => {
       </motion.div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <motion.div
           variants={cardVariants}
           initial="hidden"
@@ -282,7 +557,9 @@ const EmployeeDashboardHome = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.attendanceRate}%</div>
-              <p className="text-xs text-muted-foreground">This month</p>
+              <p className="text-xs text-muted-foreground">
+                {stats.presentDays} of {stats.totalDays} days
+              </p>
             </CardContent>
           </Card>
         </motion.div>
@@ -300,7 +577,7 @@ const EmployeeDashboardHome = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.leavesUsed}</div>
-              <p className="text-xs text-muted-foreground">Out of 24 days</p>
+              <p className="text-xs text-muted-foreground">Days taken this year</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -318,7 +595,7 @@ const EmployeeDashboardHome = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.activeProjects}</div>
-              <p className="text-xs text-muted-foreground">In progress</p>
+              <p className="text-xs text-muted-foreground">Currently assigned</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -336,17 +613,142 @@ const EmployeeDashboardHome = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.upcomingMeetings}</div>
-              <p className="text-xs text-muted-foreground">Today & tomorrow</p>
+              <p className="text-xs text-muted-foreground">Scheduled meetings</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          variants={cardVariants}
+          initial="hidden"
+          animate="visible"
+          transition={{ delay: 0.5 }}
+        >
+          <Card className="hover:shadow-lg transition-shadow duration-200">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Today's Status</CardTitle>
+              {todayAttendance ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {todayAttendance ? (
+                  <span className="text-green-600">Present</span>
+                ) : (
+                  <span className="text-yellow-600">Not Marked</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {todayAttendance ? `Punched in at ${todayAttendance.punchIn}` : 'Mark your attendance'}
+              </p>
             </CardContent>
           </Card>
         </motion.div>
       </div>
 
+      {/* Upcoming Meetings Preview */}
+      {upcomingMeetings.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-blue-600" />
+                Next Meeting
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-4 w-full sm:w-auto">
+                  <div className="text-center min-w-[40px]">
+                    <p className="text-lg font-semibold">
+                      {new Date(upcomingMeetings[0].date).getDate()}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(upcomingMeetings[0].date).toLocaleDateString('en-US', { weekday: 'short' })}
+                    </p>
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-lg">{upcomingMeetings[0].title}</h3>
+                      <Badge className={upcomingMeetings[0].type === 'common' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}>
+                        {upcomingMeetings[0].type === 'common' ? 'All Staff' : upcomingMeetings[0].department}
+                      </Badge>
+                      {isToday(upcomingMeetings[0].date) && (
+                        <Badge className="bg-red-100 text-red-700">Today</Badge>
+                      )}
+                      {isTomorrow(upcomingMeetings[0].date) && (
+                        <Badge className="bg-orange-100 text-orange-700">Tomorrow</Badge>
+                      )}
+                    </div>
+                    
+                    <p className="text-sm text-gray-600 mb-2">{upcomingMeetings[0].description}</p>
+                    
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        <span>
+                          {new Date(`${upcomingMeetings[0].date}T${upcomingMeetings[0].time}`).toLocaleTimeString('en-US', { 
+                            hour: '2-digit', 
+                            minute: '2-digit',
+                            hour12: true 
+                          })} ({upcomingMeetings[0].duration} min)
+                        </span>
+                      </div>
+                      {upcomingMeetings[0].meetingLink && (
+                        <div className="flex items-center gap-1">
+                          <Video className="h-3 w-3" />
+                          <span>Online Meeting</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-3 sm:mt-0 w-full sm:w-auto">
+                  {upcomingMeetings[0].meetingLink && (
+                    <Button 
+                      size="sm" 
+                      asChild
+                      className="w-full sm:w-auto"
+                    >
+                      <a 
+                        href={upcomingMeetings[0].meetingLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center"
+                      >
+                        <Video className="h-4 w-4 mr-2" />
+                        Join Meeting
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {upcomingMeetings.length > 1 && (
+                <div className="text-center pt-4">
+                  <Button variant="ghost" className="text-blue-600">
+                    View all {upcomingMeetings.length} upcoming meetings
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       {/* Attendance Card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
+        transition={{ delay: 0.7 }}
       >
         <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
           <CardHeader>
@@ -403,12 +805,12 @@ const EmployeeDashboardHome = () => {
                 >
                   {loading ? (
                     <>
-                      <Clock className="w-4 h-4 mr-2 animate-spin" />
+                      <Clock className="w-4 w-4 mr-2 animate-spin" />
                       Processing...
                     </>
                   ) : (
                     <>
-                      <Clock className="w-4 h-4 mr-2" />
+                      <Clock className="w-4 w-4 mr-2" />
                       Punch In
                     </>
                   )}
@@ -419,69 +821,108 @@ const EmployeeDashboardHome = () => {
         </Card>
       </motion.div>
 
-      {/* Quick Actions & Meetings */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.6 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                {quickActions.map((action, index) => (
-                  <Button
-                    key={index}
-                    className={`h-20 flex flex-col gap-2 ${action.color} text-white`}
-                  >
-                    <action.icon className="h-5 w-5" />
-                    <span className="text-sm">{action.label}</span>
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+      {/* Quick Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.8 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              {quickActions.map((action, index) => (
+                <Button
+                  key={index}
+                  
+                  className={`h-20 flex flex-col gap-2 ${action.color} text-white`}
+                >
+                  <action.icon className="h-5 w-5" />
+                  <span className="text-sm">{action.label}</span>
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        {/* Upcoming Meetings */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.7 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Upcoming Meetings
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {upcomingMeetings.map((meeting) => (
-                  <div key={meeting.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium">{meeting.title}</p>
-                      <p className="text-sm text-gray-600">{meeting.time} • {meeting.date}</p>
+      {/* Recent Leaves */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.9 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plane className="h-4 w-4" />
+              Recent Leave Requests
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {leaveRequests.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No leave requests found
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {leaveRequests.slice(0, 3).map((request) => (
+                  <div key={request.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold">{request.leaveType}</h3>
+                          <Badge className={
+                            request.status === 'approved' ? 'bg-green-100 text-green-700' :
+                            request.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }>
+                            {request.status}
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3 text-sm text-gray-600">
+                          <div>
+                            <p className="font-medium">Duration</p>
+                            <p>{calculateLeaveDays(request.startDate, request.endDate)} day(s)</p>
+                          </div>
+                          <div>
+                            <p className="font-medium">Start Date</p>
+                            <p>{new Date(request.startDate).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="font-medium">End Date</p>
+                            <p>{new Date(request.endDate).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        
+                        <p className="text-xs text-gray-500">
+                          Applied on: {new Date(request.appliedAt).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
-                    <Badge variant="outline">{meeting.date}</Badge>
                   </div>
                 ))}
+                {leaveRequests.length > 3 && (
+                  <div className="text-center pt-2">
+                    <Button variant="ghost" className="text-blue-600">
+                      View all {leaveRequests.length} leave requests
+                    </Button>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Recent Activities */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
+        transition={{ delay: 1.0 }}
       >
         <Card>
           <CardHeader>

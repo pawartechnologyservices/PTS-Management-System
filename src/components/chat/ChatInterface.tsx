@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../hooks/useAuth';
@@ -97,36 +96,6 @@ const ChatInterface = () => {
         editMessage(chatId, newMessage.id, content);
       }, Math.random() * 3000 + 1000); // 1-4 seconds delay
     }, Math.random() * 1000 + 500); // 0.5-1.5 seconds delay
-
-    // Simulate auto-reply for demo purposes (optional)
-    if (Math.random() > 0.7) { // 30% chance of auto-reply
-      setTimeout(() => {
-        const autoReply = {
-          id: (Date.now() + 1).toString(),
-          senderId: selectedUser.id,
-          receiverId: user.id,
-          content: getAutoReply(content),
-          type: 'text' as const,
-          timestamp: new Date(),
-          status: 'delivered' as const
-        };
-        addMessage(chatId, autoReply);
-      }, Math.random() * 5000 + 2000); // 2-7 seconds delay
-    }
-  };
-
-  // Simple auto-reply generator for demo
-  const getAutoReply = (originalMessage: string): string => {
-    const replies = [
-      "Thanks for your message!",
-      "I'll get back to you on this.",
-      "Understood, will handle it.",
-      "Got it, thanks!",
-      "Let me check and respond.",
-      "Received, working on it.",
-      "Okay, I'll take care of this."
-    ];
-    return replies[Math.floor(Math.random() * replies.length)];
   };
 
   // Handle typing with debounce

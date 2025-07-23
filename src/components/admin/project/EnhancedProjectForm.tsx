@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -7,15 +7,29 @@ import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Badge } from '../../ui/badge';
 import { X, Plus } from 'lucide-react';
-import { Task } from '../../../types/project';
+import { ref, onValue, off, set, push, get } from 'firebase/database';
+import { database } from '../../../firebase';
+import { useAuth } from '../../../hooks/useAuth';
+import { toast } from '../../ui/use-toast';
 
 interface Employee {
   id: string;
   name: string;
+  email: string;
   department: string;
   designation: string;
-  role: string;
   isActive: boolean;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  assignedTo: string;
+  priority: 'low' | 'medium' | 'high';
+  dueDate: string;
+  status: string;
+  createdAt: string;
 }
 
 interface ProjectFormData {
@@ -29,23 +43,24 @@ interface ProjectFormData {
   endDate: string;
   priority: string;
   status: string;
+  projectType: string;
+  specificDepartment?: string;
 }
 
 interface EnhancedProjectFormProps {
-  formData: ProjectFormData;
-  setFormData: React.Dispatch<React.SetStateAction<ProjectFormData>>;
-  employees: Employee[];
-  onSubmit: (e: React.FormEvent) => void;
+  onSuccess?: () => void;
   onCancel: () => void;
 }
 
 const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
-  formData,
-  setFormData,
-  employees,
-  onSubmit,
+  onSuccess = () => {},
   onCancel
 }) => {
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -54,9 +69,82 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
     dueDate: ''
   });
 
-  const teamLeaders = employees.filter(emp => emp.role === 'team_leader' && emp.isActive);
-  const developers = employees.filter(emp => emp.role === 'employee' && emp.isActive);
-  const departments = [...new Set(employees.map(emp => emp.department))];
+  const [formData, setFormData] = useState<ProjectFormData>({
+    name: '',
+    description: '',
+    department: '',
+    assignedTeamLeader: '',
+    assignedEmployees: [],
+    tasks: [],
+    startDate: '',
+    endDate: '',
+    priority: 'medium',
+    status: 'planned',
+    projectType: 'common',
+    specificDepartment: ''
+  });
+
+  const departments = ['Software Development', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing'];
+
+  useEffect(() => {
+    if (!user) return;
+
+    setLoading(true);
+    setError(null);
+
+    const employeesRef = ref(database, `users/${user.id}/employees`);
+
+    const fetchEmployees = onValue(employeesRef, (snapshot) => {
+      try {
+        const employeesData: Employee[] = [];
+        
+        snapshot.forEach((childSnapshot) => {
+          const employeeId = childSnapshot.key;
+          const employeeData = childSnapshot.val();
+
+          if (employeeData && employeeData.status === 'active') {
+            employeesData.push({
+              id: employeeId || '',
+              name: employeeData.name || '',
+              email: employeeData.email || '',
+              department: employeeData.department || '',
+              designation: employeeData.designation || '',
+              isActive: employeeData.status === 'active',
+            });
+          }
+        });
+
+        setEmployees(employeesData);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error processing employee data:', err);
+        setError('Failed to process employee data');
+        setLoading(false);
+      }
+    }, (error) => {
+      console.error('Error fetching employees:', error);
+      setError('Failed to load employees');
+      setLoading(false);
+    });
+
+    return () => off(employeesRef);
+  }, [user]);
+
+  useEffect(() => {
+    if (formData.projectType === 'common') {
+      setFilteredEmployees(employees);
+    } else if (formData.projectType === 'department' && formData.specificDepartment) {
+      const deptEmployees = employees.filter(emp => 
+        emp.department === formData.specificDepartment
+      );
+      setFilteredEmployees(deptEmployees);
+    } else {
+      setFilteredEmployees([]);
+    }
+  }, [employees, formData.projectType, formData.specificDepartment]);
+
+  const teamLeaders = filteredEmployees.filter(emp => emp.designation === 'Team Lead');
+  const developers = filteredEmployees.filter(emp => emp.designation !== 'Team Lead');
 
   const handleEmployeeToggle = (employeeId: string) => {
     setFormData(prev => ({
@@ -98,13 +186,190 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
     }));
   };
 
+  const handleProjectTypeChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      projectType: value,
+      specificDepartment: value === 'common' ? '' : prev.specificDepartment,
+      assignedTeamLeader: '',
+      assignedEmployees: [],
+      tasks: []
+    }));
+  };
+
+  const handleDepartmentChange = (value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      specificDepartment: value,
+      assignedTeamLeader: '',
+      assignedEmployees: [],
+      tasks: []
+    }));
+  };
+
+  const getTypeColor = (type: string) => {
+    return type === 'common' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      // Create project ID
+      const projectId = push(ref(database, `users/${user.id}/projects`)).key;
+      if (!projectId) throw new Error('Failed to generate project ID');
+
+      // Prepare base project data
+      const projectData = {
+        id: projectId,
+        name: formData.name,
+        description: formData.description,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        priority: formData.priority,
+        status: formData.status,
+        projectType: formData.projectType,
+        department: formData.specificDepartment || 'common',
+        assignedTeamLeader: formData.assignedTeamLeader,
+        assignedEmployees: formData.assignedEmployees,
+        createdAt: new Date().toISOString(),
+        createdBy: user.id,
+        tasks: {},
+        updates: {
+          [Date.now().toString()]: {
+            updatedBy: user.name || 'Admin',
+            updatedById: user.id,
+            changes: [{
+              field: 'status',
+              oldValue: '',
+              newValue: 'created'
+            }],
+            note: 'Project created'
+          }
+        }
+      };
+
+      // Add tasks to project data
+      formData.tasks.forEach(task => {
+        projectData.tasks[task.id] = {
+          ...task,
+          updates: {
+            [Date.now().toString()]: {
+              updatedBy: user.name || 'Admin',
+              updatedById: user.id,
+              changes: [{
+                field: 'status',
+                oldValue: '',
+                newValue: task.status
+              }],
+              note: 'Task created'
+            }
+          }
+        };
+      });
+
+      // Store project in admin's projects
+      await set(
+        ref(database, `users/${user.id}/projects/${projectId}`),
+        projectData
+      );
+
+      // Prepare employees to assign (team leader + assigned employees)
+    // In the handleSubmit function, modify the employee assignment logic:
+const employeesToAssign = [
+  ...(formData.assignedTeamLeader ? [formData.assignedTeamLeader] : []),
+  ...formData.assignedEmployees
+].filter((value, index, self) => self.indexOf(value) === index);
+
+await Promise.all(
+  employeesToAssign.map(async (employeeId) => {
+    const isTeamLead = employees.find(e => e.id === employeeId)?.designation === 'Team Lead';
+    
+    // Team Leads get all tasks, regular employees get only their assigned tasks
+    const tasksToAssign = isTeamLead 
+      ? formData.tasks 
+      : formData.tasks.filter(task => task.assignedTo === employeeId);
+
+    const employeeProjectData = {
+      ...projectData,
+      tasks: tasksToAssign.reduce((acc, task) => {
+        acc[task.id] = {
+          ...task,
+          updates: {
+            [Date.now().toString()]: {
+              updatedBy: user.name || 'Admin',
+              updatedById: user.id,
+              changes: [{
+                field: 'status',
+                oldValue: '',
+                newValue: task.status
+              }],
+              note: 'Task created'
+            }
+          }
+        };
+        return acc;
+      }, {} as Record<string, any>)
+    };
+
+    await set(
+      ref(database, `users/${user.id}/employees/${employeeId}/projects/${projectId}`),
+      employeeProjectData
+    );
+  })
+);
+
+      toast({
+        title: "Project Created",
+        description: "Project has been successfully created and assigned",
+      });
+
+      onSuccess();
+      onCancel();
+    } catch (error) {
+      console.error('Error creating project:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create project. Please try again.",
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading employees...</CardTitle>
+        </CardHeader>
+        <CardContent className="flex justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Error</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-red-500">{error}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Create New Project</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Project Name</Label>
@@ -118,8 +383,31 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
-              <Select value={formData.department} onValueChange={(value) => setFormData(prev => ({ ...prev, department: value }))}>
+              <Label>Project Type</Label>
+              <Select 
+                value={formData.projectType} 
+                onValueChange={handleProjectTypeChange}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="common">Common Project</SelectItem>
+                  <SelectItem value="department">Department Project</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {formData.projectType === 'department' && (
+            <div className="space-y-2">
+              <Label>Department</Label>
+              <Select 
+                value={formData.specificDepartment || ''} 
+                onValueChange={handleDepartmentChange}
+                required
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
@@ -130,7 +418,7 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
@@ -146,16 +434,26 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="teamLeader">Team Leader</Label>
-              <Select value={formData.assignedTeamLeader} onValueChange={(value) => setFormData(prev => ({ ...prev, assignedTeamLeader: value }))}>
+              <Select 
+                value={formData.assignedTeamLeader} 
+                onValueChange={(value) => setFormData(prev => ({ ...prev, assignedTeamLeader: value }))}
+                disabled={!formData.projectType || (formData.projectType === 'department' && !formData.specificDepartment)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select team leader" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teamLeaders.map(leader => (
-                    <SelectItem key={leader.id} value={leader.id}>
-                      {leader.name} - {leader.designation}
+                  {teamLeaders.length > 0 ? (
+                    teamLeaders.map(leader => (
+                      <SelectItem key={leader.id} value={leader.id}>
+                        {leader.name} - {leader.department}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-leaders" disabled>
+                      No available team leaders
                     </SelectItem>
-                  ))}
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -201,40 +499,55 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
           </div>
 
           <div className="space-y-3">
-            <Label>Assign Developers (Bulk Selection)</Label>
+            <Label>Assign Team Members</Label>
+            <div className="flex items-center gap-2 mb-2">
+              <Badge className={getTypeColor(formData.projectType)}>
+                {formData.projectType === 'common' ? 'Common Project' : formData.specificDepartment}
+              </Badge>
+              <span className="text-sm text-gray-500">
+                {formData.assignedEmployees.length} members selected
+              </span>
+            </div>
+            
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 border rounded">
-              {developers.map(developer => (
-                <div key={developer.id} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id={`dev-${developer.id}`}
-                    checked={formData.assignedEmployees.includes(developer.id)}
-                    onChange={() => handleEmployeeToggle(developer.id)}
-                    className="rounded"
-                  />
-                  <label htmlFor={`dev-${developer.id}`} className="text-sm">
-                    {developer.name}
-                  </label>
+              {developers.length > 0 ? (
+                developers.map(developer => (
+                  <div key={developer.id} className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id={`dev-${developer.id}`}
+                      checked={formData.assignedEmployees.includes(developer.id)}
+                      onChange={() => handleEmployeeToggle(developer.id)}
+                      className="rounded"
+                    />
+                    <label htmlFor={`dev-${developer.id}`} className="text-sm">
+                      {developer.name} ({developer.department})
+                    </label>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-3 text-center text-sm text-gray-500 py-2">
+                  {formData.projectType === 'department' && !formData.specificDepartment 
+                    ? 'Please select a department first'
+                    : 'No employees available for the selected project type/department'}
                 </div>
-              ))}
+              )}
             </div>
             <div className="flex flex-wrap gap-1 mt-2">
               {formData.assignedEmployees.map(empId => {
                 const emp = employees.find(e => e.id === empId);
                 return emp ? (
                   <Badge key={empId} variant="secondary" className="text-xs">
-                    {emp.name}
+                    {emp.name} ({emp.department})
                   </Badge>
                 ) : null;
               })}
             </div>
           </div>
 
-          {/* Task Management Section */}
           <div className="space-y-4 border-t pt-4">
             <Label className="text-lg font-semibold">Project Tasks</Label>
             
-            {/* Add New Task */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
               <Input
                 placeholder="Task title"
@@ -246,17 +559,27 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
                 value={newTask.dueDate}
                 onChange={(e) => setNewTask(prev => ({ ...prev, dueDate: e.target.value }))}
               />
-              <Select value={newTask.assignedTo} onValueChange={(value) => setNewTask(prev => ({ ...prev, assignedTo: value }))}>
+              <Select 
+                value={newTask.assignedTo} 
+                onValueChange={(value) => setNewTask(prev => ({ ...prev, assignedTo: value }))}
+                disabled={formData.assignedEmployees.length === 0}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Assign to developer" />
+                  <SelectValue placeholder="Assign to team member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {formData.assignedEmployees.map(empId => {
-                    const emp = employees.find(e => e.id === empId);
-                    return emp ? (
-                      <SelectItem key={empId} value={empId}>{emp.name}</SelectItem>
-                    ) : null;
-                  })}
+                  {formData.assignedEmployees.length > 0 ? (
+                    formData.assignedEmployees.map(empId => {
+                      const emp = employees.find(e => e.id === empId);
+                      return emp ? (
+                        <SelectItem key={empId} value={empId}>{emp.name}</SelectItem>
+                      ) : null;
+                    })
+                  ) : (
+                    <SelectItem value="no-members" disabled>
+                      No team members assigned
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
               <Select value={newTask.priority} onValueChange={(value) => setNewTask(prev => ({ ...prev, priority: value as 'low' | 'medium' | 'high' }))}>
@@ -276,13 +599,17 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
                   onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))}
                 />
               </div>
-              <Button type="button" onClick={addTask} className="flex items-center gap-2">
+              <Button 
+                type="button" 
+                onClick={addTask} 
+                className="flex items-center gap-2"
+                disabled={!newTask.title || !newTask.assignedTo || !newTask.dueDate}
+              >
                 <Plus className="h-4 w-4" />
                 Add Task
               </Button>
             </div>
 
-            {/* Display Added Tasks */}
             {formData.tasks.length > 0 && (
               <div className="space-y-2">
                 <Label>Added Tasks ({formData.tasks.length})</Label>
@@ -325,7 +652,18 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button 
+              type="submit"
+              disabled={
+                !formData.name || 
+                !formData.description || 
+                !formData.projectType || 
+                (formData.projectType === 'department' && !formData.specificDepartment) || 
+                !formData.assignedTeamLeader || 
+                !formData.startDate || 
+                !formData.endDate
+              }
+            >
               Create Project
             </Button>
           </div>

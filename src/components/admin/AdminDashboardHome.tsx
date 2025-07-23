@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, UserCheck, Calendar, Clock, FolderOpen, Camera } from 'lucide-react';
@@ -8,23 +7,102 @@ import LeavePopup from './popups/LeavePopup';
 import EmployeesPopup from './popups/EmployeesPopup';
 import ProjectsPopup from './popups/ProjectsPopup';
 import MarketingPostsPopup from './popups/MarketingPostsPopup';
+import { ref, onValue, off, query, orderByChild } from 'firebase/database';
+import { database } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
+
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  designation: string;
+  employeeId: string;
+  isActive: boolean;
+  createdAt: string;
+  profileImage?: string;
+  addedBy?: string;
+  status: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  department: string;
+  assignedTeamLeader: string;
+  assignedEmployees: string[];
+  startDate: string;
+  endDate: string;
+  priority: string;
+  status: 'active' | 'completed' | 'paused';
+  projectType: string;
+  specificDepartment?: string;
+  createdAt: string;
+  createdBy: string;
+  progress: number;
+}
+
+interface MarketingPost {
+  id: string;
+  title: string;
+  content: string;
+  platform: string;
+  postedAt: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  status: string;
+}
+
+interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  department: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  appliedAt: string;
+}
+
+interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  punchIn: string;
+  punchOut: string | null;
+  status: string;
+  workMode: string;
+  timestamp: number;
+  department?: string;
+}
 
 const AdminDashboardHome = () => {
-  const [employees, setEmployees] = useState([]);
-  const [leaveRequests, setLeaveRequests] = useState([]);
-  const [attendanceData, setAttendanceData] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [marketingPosts, setMarketingPosts] = useState([]);
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [marketingPosts, setMarketingPosts] = useState<MarketingPost[]>([]);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     activeEmployees: 0,
     pendingLeaves: 0,
     todayPresent: 0,
-    ongoingProjects: 0,
+    totalProjects: 0,
+    activeProjects: 0,
+    completedProjects: 0,
+    pausedProjects: 0,
     digitalMarketingPosts: 0
   });
 
-  // Popup states
   const [showAttendancePopup, setShowAttendancePopup] = useState(false);
   const [showLeavePopup, setShowLeavePopup] = useState(false);
   const [showEmployeesPopup, setShowEmployeesPopup] = useState(false);
@@ -33,122 +111,200 @@ const AdminDashboardHome = () => {
   const [showMarketingPopup, setShowMarketingPopup] = useState(false);
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (!user?.id) return;
 
-  const loadDashboardData = () => {
-    // Load employees
-    const users = JSON.parse(localStorage.getItem('hrms_users') || '[]');
-    const employeeUsers = users.filter((user: any) => user.role === 'employee');
-    setEmployees(employeeUsers);
-
-    // Load leave requests
-    const leaves = JSON.parse(localStorage.getItem('leave_requests') || '[]');
-    const pendingLeaves = leaves.filter((leave: any) => leave.status === 'pending');
-    setLeaveRequests(pendingLeaves);
-
-    // Load attendance data (mock data for today)
-    const today = new Date().toISOString().split('T')[0];
-    const mockAttendance = employeeUsers.map((emp: any, index: number) => ({
-      id: `att_${emp.id}`,
-      employeeName: emp.name,
-      department: emp.department,
-      punchIn: index < 2 ? '09:45 AM' : '09:15 AM',
-      date: today,
-      status: index < 2 ? 'late' : 'present'
-    }));
-    setAttendanceData(mockAttendance);
-
-    // Mock projects data
-    const mockProjects = [
-      {
-        id: 'proj_1',
-        title: 'Website Redesign',
-        description: 'Complete redesign of company website with modern UI/UX',
-        startDate: '2024-01-15',
-        endDate: '2024-03-15',
-        department: 'IT',
-        assignedEmployees: ['emp_1', 'emp_2'],
-        status: 'active',
-        progress: 65
-      },
-      {
-        id: 'proj_2',
-        title: 'Marketing Campaign Q1',
-        description: 'Digital marketing campaign for Q1 product launch',
-        startDate: '2024-01-01',
-        endDate: '2024-03-31',
-        department: 'Marketing',
-        assignedEmployees: ['emp_3', 'emp_4'],
-        status: 'active',
-        progress: 40
-      },
-      {
-        id: 'proj_3',
-        title: 'HR Process Automation',
-        description: 'Automate HR processes using new PTS system',
-        startDate: '2024-02-01',
-        endDate: '2024-04-30',
-        department: 'HR',
-        assignedEmployees: ['emp_5'],
-        status: 'active',
-        progress: 25
+    setLoading(true);
+    const employeesRef = ref(database, `users/${user.id}/employees`);
+    const unsubscribeEmployees = onValue(employeesRef, (snapshot) => {
+      const employeesData = snapshot.val();
+      if (employeesData) {
+        const employeesList: Employee[] = Object.entries(employeesData).map(([key, value]) => ({
+          id: key,
+          ...(value as Omit<Employee, 'id'>),
+          isActive: (value as any).status === 'active',
+          employeeId: (value as any).employeeId || `EMP-${key.slice(0, 8)}`
+        }));
+        setEmployees(employeesList);
+      } else {
+        setEmployees([]);
       }
-    ];
-    setProjects(mockProjects);
-
-    // Mock marketing posts data
-    const mockMarketingPosts = [
-      {
-        id: 'post_1',
-        title: 'New Product Launch',
-        content: 'Excited to announce our latest product innovation! Check out the amazing features...',
-        platform: 'Facebook',
-        postedAt: '2024-01-20T10:30:00Z',
-        likes: 245,
-        comments: 18,
-        shares: 12,
-        status: 'published'
-      },
-      {
-        id: 'post_2',
-        title: 'Team Achievement',
-        content: 'Congratulations to our development team for achieving this milestone!',
-        platform: 'LinkedIn',
-        postedAt: '2024-01-19T14:15:00Z',
-        likes: 156,
-        comments: 23,
-        shares: 8,
-        status: 'published'
-      },
-      {
-        id: 'post_3',
-        title: 'Behind the Scenes',
-        content: 'Take a look at how our creative team works their magic...',
-        platform: 'Instagram',
-        postedAt: '2024-01-18T16:45:00Z',
-        likes: 387,
-        comments: 45,
-        shares: 21,
-        status: 'published'
-      }
-    ];
-    setMarketingPosts(mockMarketingPosts);
-
-    // Calculate stats
-    const activeCount = employeeUsers.filter((emp: any) => emp.isActive).length;
-    const todayPresent = mockAttendance.filter(att => att.status === 'present' || att.status === 'late').length;
-    const ongoingProjects = mockProjects.filter(proj => proj.status === 'active').length;
-
-    setStats({
-      totalEmployees: employeeUsers.length,
-      activeEmployees: activeCount,
-      pendingLeaves: pendingLeaves.length,
-      todayPresent,
-      ongoingProjects,
-      digitalMarketingPosts: mockMarketingPosts.length
+    }, (error) => {
+      console.error('Error fetching employees:', error);
+      setLoading(false);
     });
-  };
+
+    return () => {
+      off(employeesRef);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const projectsRef = ref(database, `users/${user.id}/projects`);
+    const unsubscribeProjects = onValue(projectsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const projectsData: Project[] = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...(value as Omit<Project, 'id'>),
+          status: (value as any).status || 'active',
+          progress: (value as any).progress || 0
+        }));
+        setProjects(projectsData);
+      } else {
+        setProjects([]);
+      }
+    }, (error) => {
+      console.error('Error fetching projects:', error);
+    });
+
+    return () => {
+      off(projectsRef);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.id || employees.length === 0) return;
+
+    const allLeaveRequests: LeaveRequest[] = [];
+    const leaveUnsubscribes: (() => void)[] = [];
+
+    employees.forEach(employee => {
+      const leavesRef = ref(database, `users/${user.id}/employees/${employee.id}/leaves`);
+      const leavesQuery = query(leavesRef, orderByChild('appliedAt'));
+      
+      const unsubscribe = onValue(leavesQuery, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const requests: LeaveRequest[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            employeeId: employee.id,
+            employeeName: employee.name,
+            employeeEmail: employee.email,
+            department: employee.department || 'No Department',
+            ...(value as Omit<LeaveRequest, 'id' | 'employeeId' | 'employeeName' | 'employeeEmail' | 'department'>)
+          }));
+          
+          const existingRequests = allLeaveRequests.filter(r => r.employeeId !== employee.id);
+          allLeaveRequests.splice(0, allLeaveRequests.length, ...existingRequests, ...requests);
+          setLeaveRequests([...allLeaveRequests].sort((a, b) => 
+            new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime()
+          ));
+        } else {
+          const updatedRequests = allLeaveRequests.filter(r => r.employeeId !== employee.id);
+          allLeaveRequests.splice(0, allLeaveRequests.length, ...updatedRequests);
+          setLeaveRequests([...allLeaveRequests]);
+        }
+      });
+
+      leaveUnsubscribes.push(unsubscribe);
+    });
+
+    const allAttendanceRecords: AttendanceRecord[] = [];
+    const attendanceUnsubscribes: (() => void)[] = [];
+
+    employees.forEach(employee => {
+      const attendanceRef = ref(database, `users/${user.id}/employees/${employee.id}/punching`);
+      const attendanceQuery = query(attendanceRef, orderByChild('timestamp'));
+      
+      const unsubscribe = onValue(attendanceQuery, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            employeeId: employee.id,
+            employeeName: employee.name,
+            department: employee.department,
+            ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName' | 'department'>)
+          }));
+          
+          const existingRecords = allAttendanceRecords.filter(r => r.employeeId !== employee.id);
+          allAttendanceRecords.splice(0, allAttendanceRecords.length, ...existingRecords, ...records);
+          setAttendanceRecords([...allAttendanceRecords].sort((a, b) => b.timestamp - a.timestamp));
+        } else {
+          const updatedRecords = allAttendanceRecords.filter(r => r.employeeId !== employee.id);
+          allAttendanceRecords.splice(0, allAttendanceRecords.length, ...updatedRecords);
+          setAttendanceRecords([...allAttendanceRecords]);
+        }
+      });
+
+      attendanceUnsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      leaveUnsubscribes.forEach(unsubscribe => unsubscribe());
+      attendanceUnsubscribes.forEach(unsubscribe => unsubscribe());
+    };
+  }, [user, employees]);
+
+  useEffect(() => {
+    if (employees.length > 0) {
+      const activeCount = employees.filter(emp => emp.isActive).length;
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todayAttendance = attendanceRecords.filter(record => {
+        const recordDate = new Date(record.date).toISOString().split('T')[0];
+        return recordDate === today && (record.status === 'present' || record.status === 'late');
+      }).length;
+
+      const pendingLeaves = leaveRequests.filter(request => 
+        request.status === 'pending'
+      ).length;
+
+      const activeProjects = projects.filter(project => 
+        project.status === 'active'
+      ).length;
+
+      const completedProjects = projects.filter(project => 
+        project.status === 'completed'
+      ).length;
+
+      const pausedProjects = projects.filter(project => 
+        project.status === 'paused'
+      ).length;
+
+      setStats(prev => ({
+        ...prev,
+        totalEmployees: employees.length,
+        activeEmployees: activeCount,
+        pendingLeaves,
+        todayPresent: todayAttendance,
+        totalProjects: projects.length,
+        activeProjects,
+        completedProjects,
+        pausedProjects,
+        digitalMarketingPosts: prev.digitalMarketingPosts
+      }));
+
+      const mockMarketingPosts: MarketingPost[] = [
+        {
+          id: 'post_1',
+          title: 'New Product Launch',
+          content: 'Excited to announce our latest product innovation!',
+          platform: 'Facebook',
+          postedAt: '2024-01-20T10:30:00Z',
+          likes: 245,
+          comments: 18,
+          shares: 12,
+          status: 'published'
+        },
+        {
+          id: 'post_2',
+          title: 'Team Achievement',
+          content: 'Congratulations to our development team!',
+          platform: 'LinkedIn',
+          postedAt: '2024-01-19T14:15:00Z',
+          likes: 156,
+          comments: 23,
+          shares: 8,
+          status: 'published'
+        }
+      ];
+      setMarketingPosts(mockMarketingPosts);
+      setStats(prev => ({ ...prev, digitalMarketingPosts: mockMarketingPosts.length }));
+    }
+  }, [employees, leaveRequests, attendanceRecords, projects]);
 
   const dashboardCards = [
     {
@@ -176,7 +332,7 @@ const AdminDashboardHome = () => {
       onClick: () => setShowLeavePopup(true)
     },
     {
-      title: 'Total Attendance',
+      title: 'Today\'s Attendance',
       value: `${stats.todayPresent}/${stats.activeEmployees}`,
       subtitle: 'Present today',
       icon: Clock,
@@ -184,15 +340,15 @@ const AdminDashboardHome = () => {
       onClick: () => setShowAttendancePopup(true)
     },
     {
-      title: 'Ongoing Projects',
-      value: stats.ongoingProjects,
-      subtitle: 'Active projects',
+      title: 'Total Projects',
+      value: stats.totalProjects,
+      subtitle: `Active: ${stats.activeProjects} | Completed: ${stats.completedProjects} | Paused: ${stats.pausedProjects}`,
       icon: FolderOpen,
       color: 'from-indigo-50 to-indigo-100 text-indigo-700',
       onClick: () => setShowProjectsPopup(true)
     },
     {
-      title: 'Digital Marketing Posts',
+      title: 'Marketing Posts',
       value: stats.digitalMarketingPosts,
       subtitle: 'Recent posts',
       icon: Camera,
@@ -201,9 +357,16 @@ const AdminDashboardHome = () => {
     }
   ];
 
+  if (loading && employees.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Welcome Section */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -213,28 +376,35 @@ const AdminDashboardHome = () => {
         <p className="text-gray-600">Interactive overview of your organization's workforce and activities</p>
       </motion.div>
 
-      {/* Interactive Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {dashboardCards.map((card, index) => (
           <DashboardCard
             key={card.title}
-            {...card}
+            title={card.title}
+            value={card.value}
+            subtitle={card.subtitle}
+            icon={card.icon}
+            color={card.color}
+            onClick={card.onClick}
             delay={index * 0.1}
           />
         ))}
       </div>
 
-      {/* Popups */}
       <AttendancePopup
         isOpen={showAttendancePopup}
         onClose={() => setShowAttendancePopup(false)}
-        attendanceData={attendanceData}
+        attendanceData={attendanceRecords.filter(record => {
+          const today = new Date().toISOString().split('T')[0];
+          const recordDate = new Date(record.date).toISOString().split('T')[0];
+          return recordDate === today;
+        })}
       />
 
       <LeavePopup
         isOpen={showLeavePopup}
         onClose={() => setShowLeavePopup(false)}
-        leaveRequests={leaveRequests}
+        leaveRequests={leaveRequests.filter(request => request.status === 'pending')}
       />
 
       <EmployeesPopup
