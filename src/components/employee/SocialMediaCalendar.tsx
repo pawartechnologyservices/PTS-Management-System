@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Share2, Plus, Calendar, Image, Link, Edit, Trash2, Bell } from 'lucide-react';
+import { Share2, Plus, Calendar, Image, Link, Edit, Trash2, Bell, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -44,6 +44,12 @@ const SocialMediaCalendar = () => {
   });
   const [loading, setLoading] = useState(true);
   const [notificationPermission, setNotificationPermission] = useState('default');
+  const [activeNotification, setActiveNotification] = useState<{
+    post: SocialMediaPost;
+    timer: number;
+  } | null>(null);
+  const [notificationTimeout, setNotificationTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [countdownInterval, setCountdownInterval] = useState<NodeJS.Timeout | null>(null);
 
   const platforms = ['Facebook', 'Instagram', 'Twitter', 'LinkedIn', 'YouTube', 'TikTok'];
   const statuses = ['scheduled', 'published', 'draft'];
@@ -64,13 +70,14 @@ const SocialMediaCalendar = () => {
     }
   }, []);
 
-  // Check for posts scheduled for today
+  // Check for posts scheduled for today and upcoming posts
   useEffect(() => {
-    if (posts.length === 0 || notificationPermission !== 'granted') return;
+    if (posts.length === 0) return;
 
     const today = new Date();
     const todayDateString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
+    // Check for posts scheduled for today
     const todayPosts = posts.filter(post => {
       return (
         post.scheduledDate === todayDateString && 
@@ -78,11 +85,11 @@ const SocialMediaCalendar = () => {
       );
     });
 
-    if (todayPosts.length > 0) {
+    if (todayPosts.length > 0 && notificationPermission === 'granted') {
       showScheduledPostsNotification(todayPosts);
     }
 
-    // Set up interval to check for upcoming posts every hour
+    // Set up interval to check for upcoming posts every minute
     const checkInterval = setInterval(() => {
       const now = new Date();
       const currentHour = now.getHours();
@@ -90,11 +97,17 @@ const SocialMediaCalendar = () => {
 
       todayPosts.forEach(post => {
         const [hours, minutes] = post.scheduledTime.split(':').map(Number);
+        
+        // Check if it's exactly the scheduled time
+        if (currentHour === hours && currentMinute === minutes) {
+          showCenteredPostNotification(post);
+        }
+        
         // Notify 15 minutes before scheduled time
         if (
           currentHour === hours && 
-          currentMinute >= minutes - 15 && 
-          currentMinute < minutes
+          currentMinute === minutes - 15 && 
+          notificationPermission === 'granted'
         ) {
           showUpcomingPostNotification(post);
         }
@@ -105,11 +118,9 @@ const SocialMediaCalendar = () => {
   }, [posts, notificationPermission]);
 
   const showScheduledPostsNotification = (posts: SocialMediaPost[]) => {
-    if (notificationPermission !== 'granted') return;
-
     const notificationOptions = {
       body: `You have ${posts.length} post(s) scheduled for today.`,
-      icon: '/notification-icon.png', // Replace with your icon path
+      icon: '/notification-icon.png',
       tag: 'today-posts-notification'
     };
 
@@ -117,15 +128,91 @@ const SocialMediaCalendar = () => {
   };
 
   const showUpcomingPostNotification = (post: SocialMediaPost) => {
-    if (notificationPermission !== 'granted') return;
-
     const notificationOptions = {
       body: `Post scheduled for ${post.scheduledTime}: ${post.content.substring(0, 50)}...`,
-      icon: '/notification-icon.png', // Replace with your icon path
+      icon: '/notification-icon.png',
       tag: 'upcoming-post-notification'
     };
 
     new Notification(`Upcoming ${post.platform} Post`, notificationOptions);
+  };
+
+  const showCenteredPostNotification = (post: SocialMediaPost) => {
+    // Clear any existing notification and intervals
+    if (notificationTimeout) {
+      clearTimeout(notificationTimeout);
+      setNotificationTimeout(null);
+    }
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      setCountdownInterval(null);
+    }
+
+    // Set the active notification with 10 second timer
+    setActiveNotification({
+      post,
+      timer: 10
+    });
+
+    // Start countdown
+    const interval = setInterval(() => {
+      setActiveNotification(prev => {
+        if (prev && prev.timer > 1) {
+          return { ...prev, timer: prev.timer - 1 };
+        } else {
+          clearInterval(interval);
+          
+          // When timer reaches 0, open the post URL if it exists
+          if (prev?.post.postUrl) {
+            window.open(prev.post.postUrl, '_blank');
+          }
+          
+          return null;
+        }
+      });
+    }, 1000);
+
+    setCountdownInterval(interval);
+
+    // Set timeout to automatically close after 10 seconds
+    const timeout = setTimeout(() => {
+      setActiveNotification(null);
+      if (post.postUrl) {
+        window.open(post.postUrl, '_blank');
+      }
+    }, 10000);
+
+    setNotificationTimeout(timeout);
+  };
+
+  const closeNotification = () => {
+    if (notificationTimeout) {
+      clearTimeout(notificationTimeout);
+      setNotificationTimeout(null);
+    }
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      setCountdownInterval(null);
+    }
+    setActiveNotification(null);
+  };
+
+  const markAsPublished = () => {
+    if (!activeNotification || !user?.id || !user?.adminUid) return;
+
+    const postRef = ref(database, `users/${user.adminUid}/employees/${user.id}/socialmedia/${activeNotification.post.id}`);
+    
+    set(postRef, {
+      ...activeNotification.post,
+      status: 'published',
+      updatedAt: new Date().toISOString()
+    }).then(() => {
+      toast.success('Post marked as published');
+      closeNotification();
+    }).catch(error => {
+      console.error('Error updating post status:', error);
+      toast.error('Failed to update post status');
+    });
   };
 
   useEffect(() => {
@@ -310,7 +397,83 @@ const SocialMediaCalendar = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Centered Notification Popup */}
+      {activeNotification && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50"
+        >
+          <motion.div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative"
+            initial={{ y: -50 }}
+            animate={{ y: 0 }}
+          >
+            <button
+              onClick={closeNotification}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            
+            <div className="flex items-start gap-4">
+              <div className={`p-3 rounded-full ${getPlatformColor(activeNotification.post.platform)}`}>
+                <Share2 className="h-6 w-6" />
+              </div>
+              
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-lg">
+                    {activeNotification.post.platform} Post Due Now
+                  </h3>
+                  <div className="bg-gray-100 px-2 py-1 rounded-full text-sm font-medium">
+                    {activeNotification.timer}s
+                  </div>
+                </div>
+                
+                <p className="text-gray-700 mb-4">{activeNotification.post.content}</p>
+                
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Calendar className="h-4 w-4" />
+                  <span>
+                    Scheduled for {activeNotification.post.scheduledTime}
+                  </span>
+                </div>
+                
+                {activeNotification.post.postUrl && (
+                  <div className="mt-3">
+                    <a
+                      href={activeNotification.post.postUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                    >
+                      <Link className="h-4 w-4" />
+                      View Post Link
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t flex justify-end">
+              <Button
+                variant="outline"
+                onClick={closeNotification}
+                className="mr-2"
+              >
+                Dismiss
+              </Button>
+              <Button onClick={markAsPublished}>
+                Mark as Published
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}

@@ -4,7 +4,7 @@ import {
   FolderOpen, Calendar, Target, MessageSquare, 
   CheckCircle, AlertCircle, Clock, ChevronDown, ChevronUp,
   ChevronRight, Save, X,
-  Edit
+  Edit, Users
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -13,7 +13,7 @@ import { Progress } from '../ui/progress';
 import { Textarea } from '../ui/textarea';
 import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
-import { ref, onValue, update, push, set } from 'firebase/database';
+import { ref, onValue, update, push, set, get } from 'firebase/database';
 import { toast } from 'react-hot-toast';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -49,6 +49,7 @@ interface Comment {
   text: string;
   createdAt: string;
   createdBy: string;
+  createdById: string;
 }
 
 interface Task {
@@ -59,14 +60,24 @@ interface Task {
   dueDate: string;
   priority: string;
   status: string;
+  assignedTo?: string;
+  assignedToName?: string;
   updates?: Record<string, TaskUpdate>;
   comments?: Record<string, Comment>;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  designation: string;
 }
 
 const EmployeeProjects = () => {
   const { user } = useAuth();
   const [isTeamLead, setIsTeamLead] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [employees, setEmployees] = useState<Record<string, Employee>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -83,6 +94,21 @@ const EmployeeProjects = () => {
       setIsTeamLead(data?.designation === 'Team Lead');
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.adminUid) return;
+
+    // Load all employees for team lead to see who tasks are assigned to
+    const employeesRef = ref(database, `users/${user.adminUid}/employees`);
+    const unsubscribeEmployees = onValue(employeesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setEmployees(data);
+      }
+    });
+
+    return () => unsubscribeEmployees();
+  }, [user?.adminUid]);
 
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
@@ -109,7 +135,28 @@ const EmployeeProjects = () => {
               project => project.assignedTeamLeader === user.id
             );
 
-            setProjects(teamLeadProjects);
+            // Enhance tasks with assigned employee names
+            const enhancedProjects = teamLeadProjects.map(project => {
+              const enhancedTasks: Record<string, Task> = {};
+              
+              if (project.tasks) {
+                Object.entries(project.tasks).forEach(([taskId, task]) => {
+                  enhancedTasks[taskId] = {
+                    ...task,
+                    assignedToName: task.assignedTo && employees[task.assignedTo] 
+                      ? employees[task.assignedTo].name 
+                      : 'Unassigned'
+                  };
+                });
+              }
+
+              return {
+                ...project,
+                tasks: enhancedTasks
+              };
+            });
+
+            setProjects(enhancedProjects);
           } else {
             setProjects([]);
           }
@@ -157,7 +204,7 @@ const EmployeeProjects = () => {
 
       return () => unsubscribeProjects();
     }
-  }, [user, isTeamLead]);
+  }, [user, isTeamLead, employees]);
 
   const updateTaskStatus = async (projectId: string, taskId: string) => {
     if (!user?.id || !user?.adminUid || !newTaskStatus) return;
@@ -178,19 +225,7 @@ const EmployeeProjects = () => {
         note: `Status updated by ${isTeamLead ? 'Team Lead' : 'Employee'}`
       };
 
-      // Update task in employee's project
-      const employeeUpdates = {
-        [`tasks/${taskId}/status`]: newTaskStatus,
-        [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
-        [`tasks/${taskId}/updates/${timestamp}`]: updateData
-      };
-
-      await update(
-        ref(database, `users/${user.adminUid}/employees/${user.id}/projects/${projectId}`),
-        employeeUpdates
-      );
-
-      // Also update the task in admin's project
+      // First update the task in admin's project
       const adminUpdates = {
         [`tasks/${taskId}/status`]: newTaskStatus,
         [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
@@ -202,27 +237,37 @@ const EmployeeProjects = () => {
         adminUpdates
       );
 
-      // If team lead, update all team members' tasks
-      if (isTeamLead) {
-        const projectRef = ref(database, `users/${user.adminUid}/projects/${projectId}`);
-        const projectSnapshot = await get(projectRef);
-        const projectData = projectSnapshot.val();
-        
-        if (projectData.assignedEmployees) {
-          const updatePromises = projectData.assignedEmployees.map(employeeId => {
-            const employeeUpdates = {
-              [`tasks/${taskId}/status`]: newTaskStatus,
-              [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
-              [`tasks/${taskId}/updates/${timestamp}`]: updateData
-            };
-            return update(
-              ref(database, `users/${user.adminUid}/employees/${employeeId}/projects/${projectId}`),
-              employeeUpdates
-            );
-          });
+      // Get the task to find out who it's assigned to
+      const taskRef = ref(database, `users/${user.adminUid}/projects/${projectId}/tasks/${taskId}`);
+      const taskSnapshot = await get(taskRef);
+      const taskData = taskSnapshot.val();
 
-          await Promise.all(updatePromises);
+      if (isTeamLead) {
+        // If team lead is updating, only update the assigned employee's task
+        if (taskData.assignedTo) {
+          const employeeUpdates = {
+            [`tasks/${taskId}/status`]: newTaskStatus,
+            [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
+            [`tasks/${taskId}/updates/${timestamp}`]: updateData
+          };
+
+          await update(
+            ref(database, `users/${user.adminUid}/employees/${taskData.assignedTo}/projects/${projectId}`),
+            employeeUpdates
+          );
         }
+      } else {
+        // If regular employee is updating, update their own task
+        const employeeUpdates = {
+          [`tasks/${taskId}/status`]: newTaskStatus,
+          [`tasks/${taskId}/updatedAt`]: new Date().toISOString(),
+          [`tasks/${taskId}/updates/${timestamp}`]: updateData
+        };
+
+        await update(
+          ref(database, `users/${user.adminUid}/employees/${user.id}/projects/${projectId}`),
+          employeeUpdates
+        );
       }
 
       // Update local state
@@ -268,40 +313,38 @@ const EmployeeProjects = () => {
       const commentData = {
         text: taskComment,
         createdAt: new Date().toISOString(),
-        createdBy: user.name || (isTeamLead ? 'Team Lead' : 'Employee')
+        createdBy: user.name || (isTeamLead ? 'Team Lead' : 'Employee'),
+        createdById: user.id
       };
 
-      // Add to admin's project first
+      // First add to admin's project
       const adminCommentRef = ref(
         database,
         `users/${user.adminUid}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
       );
       await set(adminCommentRef, commentData);
 
-      // Add to employee's project
-      const employeeCommentRef = ref(
-        database,
-        `users/${user.adminUid}/employees/${user.id}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
-      );
-      await set(employeeCommentRef, commentData);
+      // Get the task to find out who it's assigned to
+      const taskRef = ref(database, `users/${user.adminUid}/projects/${projectId}/tasks/${taskId}`);
+      const taskSnapshot = await get(taskRef);
+      const taskData = taskSnapshot.val();
 
-      // If team lead, add to all team members' tasks
       if (isTeamLead) {
-        const projectRef = ref(database, `users/${user.adminUid}/projects/${projectId}`);
-        const projectSnapshot = await get(projectRef);
-        const projectData = projectSnapshot.val();
-        
-        if (projectData.assignedEmployees) {
-          const updatePromises = projectData.assignedEmployees.map(employeeId => {
-            const employeeCommentRef = ref(
-              database,
-              `users/${user.adminUid}/employees/${employeeId}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
-            );
-            return set(employeeCommentRef, commentData);
-          });
-
-          await Promise.all(updatePromises);
+        // If team lead is commenting, only add to the assigned employee's task
+        if (taskData.assignedTo) {
+          const employeeCommentRef = ref(
+            database,
+            `users/${user.adminUid}/employees/${taskData.assignedTo}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
+          );
+          await set(employeeCommentRef, commentData);
         }
+      } else {
+        // If regular employee is commenting, add to their own task
+        const employeeCommentRef = ref(
+          database,
+          `users/${user.adminUid}/employees/${user.id}/projects/${projectId}/tasks/${taskId}/comments/${timestamp}`
+        );
+        await set(employeeCommentRef, commentData);
       }
 
       // Update local state
@@ -447,6 +490,15 @@ const EmployeeProjects = () => {
             const totalTasksCount = tasksArray.length;
             const progress = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
+            // Get team members for this project if team lead
+            const teamMembers = isTeamLead && project.assignedEmployees 
+              ? project.assignedEmployees.map(employeeId => ({
+                  id: employeeId,
+                  name: employees[employeeId]?.name || 'Unknown',
+                  email: employees[employeeId]?.email || ''
+                }))
+              : [];
+
             return (
               <Card key={project.id}>
                 <CardContent className="p-6 space-y-4">
@@ -477,6 +529,22 @@ const EmployeeProjects = () => {
                   </div>
 
                   {project.description && <p className="text-gray-600">{project.description}</p>}
+
+                  {isTeamLead && teamMembers.length > 0 && (
+                    <div className="border rounded-lg p-3 bg-gray-50">
+                      <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Team Members ({teamMembers.length})
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {teamMembers.map(member => (
+                          <Badge key={member.id} variant="outline" className="bg-white">
+                            {member.name} ({member.email})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
@@ -540,6 +608,15 @@ const EmployeeProjects = () => {
                                       </div>
                                     </div>
                                   </div>
+
+                                  {isTeamLead && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <span className="font-medium">Assigned to:</span>
+                                      <Badge variant="outline">
+                                        {task.assignedToName || 'Unassigned'}
+                                      </Badge>
+                                    </div>
+                                  )}
 
                                   <div className="border-t pt-3">
                                     {editingTaskId === task.id ? (

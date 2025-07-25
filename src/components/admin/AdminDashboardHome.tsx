@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Users, UserCheck, Calendar, Clock, FolderOpen, Camera } from 'lucide-react';
+import { Users, UserCheck, Calendar, Clock, FolderOpen, Camera, Bell, X } from 'lucide-react';
 import DashboardCard from './DashboardCard';
 import AttendancePopup from './popups/AttendancePopup';
 import LeavePopup from './popups/LeavePopup';
@@ -10,6 +10,8 @@ import MarketingPostsPopup from './popups/MarketingPostsPopup';
 import { ref, onValue, off, query, orderByChild } from 'firebase/database';
 import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
+import { Button } from '../ui/button';
 
 interface Employee {
   id: string;
@@ -46,14 +48,18 @@ interface Project {
 
 interface MarketingPost {
   id: string;
-  title: string;
-  content: string;
   platform: string;
-  postedAt: string;
-  likes: number;
-  comments: number;
-  shares: number;
+  content: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  postUrl?: string;
+  imageUrl?: string;
   status: string;
+  createdBy: string;
+  createdByName: string;
+  department: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface LeaveRequest {
@@ -109,6 +115,161 @@ const AdminDashboardHome = () => {
   const [showActiveEmployeesPopup, setShowActiveEmployeesPopup] = useState(false);
   const [showProjectsPopup, setShowProjectsPopup] = useState(false);
   const [showMarketingPopup, setShowMarketingPopup] = useState(false);
+
+  // Notification state
+  const [notificationPermission, setNotificationPermission] = useState('default');
+  const [activeNotification, setActiveNotification] = useState<{
+    post: MarketingPost;
+    timer: number;
+  } | null>(null);
+  const [notificationTimeout, setNotificationTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Check and request notification permission
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      console.log('This browser does not support desktop notification');
+      return;
+    }
+
+    if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    } else {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
+
+  // Check for posts scheduled for today and upcoming posts
+  useEffect(() => {
+    if (marketingPosts.length === 0) return;
+
+    const today = new Date();
+    const todayDateString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
+    // Check for posts scheduled for today
+    const todayPosts = marketingPosts.filter(post => {
+      return (
+        post.scheduledDate === todayDateString && 
+        post.status === 'scheduled'
+      );
+    });
+
+    if (todayPosts.length > 0 && notificationPermission === 'granted') {
+      showScheduledPostsNotification(todayPosts);
+    }
+
+    // Set up interval to check for upcoming posts every minute
+    const checkInterval = setInterval(() => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      todayPosts.forEach(post => {
+        const [hours, minutes] = post.scheduledTime.split(':').map(Number);
+        
+        // Check if it's exactly the scheduled time
+        if (currentHour === hours && currentMinute === minutes) {
+          showCenteredPostNotification(post);
+        }
+        
+        // Notify 15 minutes before scheduled time
+        if (
+          currentHour === hours && 
+          currentMinute === minutes - 15 && 
+          notificationPermission === 'granted'
+        ) {
+          showUpcomingPostNotification(post);
+        }
+      });
+    }, 60000); // Check every minute
+
+    return () => clearInterval(checkInterval);
+  }, [marketingPosts, notificationPermission]);
+
+  const showScheduledPostsNotification = (posts: MarketingPost[]) => {
+    const notificationOptions = {
+      body: `There are ${posts.length} marketing post(s) scheduled for today.`,
+      icon: '/notification-icon.png',
+      tag: 'today-marketing-posts-notification'
+    };
+
+    new Notification('Scheduled Marketing Posts', notificationOptions);
+  };
+
+  const showUpcomingPostNotification = (post: MarketingPost) => {
+    const notificationOptions = {
+      body: `Marketing post scheduled for ${post.scheduledTime}: ${post.content.substring(0, 50)}...`,
+      icon: '/notification-icon.png',
+      tag: 'upcoming-marketing-post-notification'
+    };
+
+    new Notification(`Upcoming ${post.platform} Post`, notificationOptions);
+  };
+
+  const showCenteredPostNotification = (post: MarketingPost) => {
+    // Clear any existing notification
+    if (notificationTimeout) {
+      clearTimeout(notificationTimeout);
+      setNotificationTimeout(null);
+    }
+
+    // Set the active notification with 10 second timer
+    setActiveNotification({
+      post,
+      timer: 10
+    });
+
+    // Start countdown
+    const interval = setInterval(() => {
+      setActiveNotification(prev => {
+        if (prev && prev.timer > 1) {
+          return { ...prev, timer: prev.timer - 1 };
+        } else {
+          clearInterval(interval);
+          return null;
+        }
+      });
+    }, 1000);
+
+    // Set timeout to automatically close after 10 seconds
+    const timeout = setTimeout(() => {
+      setActiveNotification(null);
+    }, 10000);
+
+    setNotificationTimeout(timeout);
+  };
+
+  const closeNotification = () => {
+    if (notificationTimeout) {
+      clearTimeout(notificationTimeout);
+      setNotificationTimeout(null);
+    }
+    setActiveNotification(null);
+  };
+
+  const getPlatformColor = (platform: string) => {
+    const colors: Record<string, string> = {
+      'Facebook': 'bg-blue-100 text-blue-700',
+      'Instagram': 'bg-pink-100 text-pink-700',
+      'Twitter': 'bg-sky-100 text-sky-700',
+      'LinkedIn': 'bg-indigo-100 text-indigo-700',
+      'YouTube': 'bg-red-100 text-red-700',
+      'TikTok': 'bg-purple-100 text-purple-700'
+    };
+    return colors[platform] || 'bg-gray-100 text-gray-700';
+  };
+
+  const requestNotificationPermission = () => {
+    Notification.requestPermission().then(permission => {
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        toast.success('Notification permission granted!');
+      } else {
+        toast.error('You need to allow notifications for this feature');
+      }
+    });
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -239,6 +400,50 @@ const AdminDashboardHome = () => {
   }, [user, employees]);
 
   useEffect(() => {
+    if (!user?.id) return;
+
+    // Fetch marketing posts from all digital marketing employees
+    const digitalMarketingEmployees = employees.filter(emp => emp.department === 'Digital Marketing');
+    
+    const allMarketingPosts: MarketingPost[] = [];
+    const marketingUnsubscribes: (() => void)[] = [];
+
+    digitalMarketingEmployees.forEach(employee => {
+      const postsRef = ref(database, `users/${user.id}/employees/${employee.id}/socialmedia`);
+      const postsQuery = query(postsRef, orderByChild('createdAt'));
+      
+      const unsubscribe = onValue(postsQuery, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const posts: MarketingPost[] = Object.entries(data).map(([key, value]) => ({
+            id: key,
+            ...(value as Omit<MarketingPost, 'id'>)
+          }));
+          
+          const existingPosts = allMarketingPosts.filter(p => 
+            !posts.some(newPost => newPost.id === p.id)
+          );
+          allMarketingPosts.splice(0, allMarketingPosts.length, ...existingPosts, ...posts);
+          setMarketingPosts([...allMarketingPosts].sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          ));
+        } else {
+          // If no posts for this employee, keep other employees' posts
+          setMarketingPosts(prev => prev.filter(p => 
+            !digitalMarketingEmployees.some(emp => emp.id === p.createdBy)
+          ));
+        }
+      });
+
+      marketingUnsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      marketingUnsubscribes.forEach(unsubscribe => unsubscribe());
+    };
+  }, [user, employees]);
+
+  useEffect(() => {
     if (employees.length > 0) {
       const activeCount = employees.filter(emp => emp.isActive).length;
       const today = new Date().toISOString().split('T')[0];
@@ -274,37 +479,10 @@ const AdminDashboardHome = () => {
         activeProjects,
         completedProjects,
         pausedProjects,
-        digitalMarketingPosts: prev.digitalMarketingPosts
+        digitalMarketingPosts: marketingPosts.length
       }));
-
-      const mockMarketingPosts: MarketingPost[] = [
-        {
-          id: 'post_1',
-          title: 'New Product Launch',
-          content: 'Excited to announce our latest product innovation!',
-          platform: 'Facebook',
-          postedAt: '2024-01-20T10:30:00Z',
-          likes: 245,
-          comments: 18,
-          shares: 12,
-          status: 'published'
-        },
-        {
-          id: 'post_2',
-          title: 'Team Achievement',
-          content: 'Congratulations to our development team!',
-          platform: 'LinkedIn',
-          postedAt: '2024-01-19T14:15:00Z',
-          likes: 156,
-          comments: 23,
-          shares: 8,
-          status: 'published'
-        }
-      ];
-      setMarketingPosts(mockMarketingPosts);
-      setStats(prev => ({ ...prev, digitalMarketingPosts: mockMarketingPosts.length }));
     }
-  }, [employees, leaveRequests, attendanceRecords, projects]);
+  }, [employees, leaveRequests, attendanceRecords, projects, marketingPosts]);
 
   const dashboardCards = [
     {
@@ -350,7 +528,7 @@ const AdminDashboardHome = () => {
     {
       title: 'Marketing Posts',
       value: stats.digitalMarketingPosts,
-      subtitle: 'Recent posts',
+      subtitle: 'Scheduled posts',
       icon: Camera,
       color: 'from-pink-50 to-pink-100 text-pink-700',
       onClick: () => setShowMarketingPopup(true)
@@ -366,7 +544,83 @@ const AdminDashboardHome = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Centered Notification Popup */}
+      {activeNotification && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50"
+        >
+          <motion.div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 relative"
+            initial={{ y: -50 }}
+            animate={{ y: 0 }}
+          >
+            <button
+              onClick={closeNotification}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            
+            <div className="flex items-start gap-4">
+              <div className={`p-3 rounded-full ${getPlatformColor(activeNotification.post.platform)}`}>
+                <Camera className="h-6 w-6" />
+              </div>
+              
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-lg">
+                    {activeNotification.post.platform} Post Due Now
+                  </h3>
+                  <div className="bg-gray-100 px-2 py-1 rounded-full text-sm font-medium">
+                    {activeNotification.timer}s
+                  </div>
+                </div>
+                
+                <p className="text-gray-700 mb-4">{activeNotification.post.content}</p>
+                
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Calendar className="h-4 w-4" />
+                  <span>
+                    Scheduled for {activeNotification.post.scheduledTime} by {activeNotification.post.createdByName}
+                  </span>
+                </div>
+                
+                {activeNotification.post.postUrl && (
+                  <div className="mt-3">
+                    <a
+                      href={activeNotification.post.postUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                    >
+                      <Bell className="h-4 w-4" />
+                      View Post Link
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t flex justify-end">
+              <Button
+                variant="outline"
+                onClick={closeNotification}
+                className="mr-2"
+              >
+                Dismiss
+              </Button>
+              <Button onClick={closeNotification}>
+                Mark as Published
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}

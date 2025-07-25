@@ -15,7 +15,10 @@ import {
   MapPin,
   AlertTriangle,
   XCircle,
-  Download
+  Download,
+  Share2,
+  Image as ImageIcon,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -25,6 +28,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
 import { ref, push, set, onValue, update, get, query, orderByChild } from 'firebase/database';
 import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface AttendanceRecord {
   id: string;
@@ -76,6 +80,26 @@ interface Meeting {
   employeeName?: string;
 }
 
+interface SocialMediaActivity {
+  id: string;
+  type: 'social_media';
+  action: string;
+  platform: string;
+  timestamp: number;
+  content?: string;
+  scheduledDate?: string;
+  status?: string;
+}
+
+interface RecentActivity {
+  id: string;
+  type: 'project' | 'attendance' | 'task' | 'social_media';
+  action: string;
+  time: string;
+  timestamp: number;
+  details?: any;
+}
+
 const EmployeeDashboardHome = () => {
   const { user } = useAuth();
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
@@ -86,12 +110,16 @@ const EmployeeDashboardHome = () => {
     activeProjects: 0,
     upcomingMeetings: 0,
     presentDays: 0,
-    totalDays: 0
+    totalDays: 0,
+    scheduledPosts: 0
   });
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [socialMediaActivities, setSocialMediaActivities] = useState<SocialMediaActivity[]>([]);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [isTeamLead, setIsTeamLead] = useState(false);
+  const navigate = useNavigate();
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -99,16 +127,10 @@ const EmployeeDashboardHome = () => {
   ];
 
   const [quickActions] = useState([
-    { icon: Clock, label: 'Mark Attendance', color: 'bg-blue-600 hover:bg-blue-700' },
-    { icon: Plane, label: 'Apply Leave', color: 'bg-green-600 hover:bg-green-700' },
-    { icon: FolderOpen, label: 'View Projects', color: 'bg-purple-600 hover:bg-purple-700' },
-    { icon: Calendar, label: 'My Meetings', color: 'bg-orange-600 hover:bg-orange-700' },
-  ]);
-
-  const [recentActivities] = useState([
-    { id: 1, action: 'Submitted project milestone', time: '2 hours ago', type: 'project' },
-    { id: 2, action: 'Marked attendance', time: 'This morning', type: 'attendance' },
-    { id: 3, action: 'Completed task review', time: 'Yesterday', type: 'task' },
+    { icon: Clock, label: 'Mark Attendance', color: 'bg-blue-600 hover:bg-blue-700', onClick: () => navigate('/employee/attendance') },
+    { icon: Plane, label: 'Apply Leave', color: 'bg-green-600 hover:bg-green-700', onClick: () => navigate('/employee/leaves') },
+    { icon: FolderOpen, label: 'View Projects', color: 'bg-purple-600 hover:bg-purple-700', onClick: () => navigate('/employee/projects') },
+    { icon: Calendar, label: 'My Meetings', color: 'bg-orange-600 hover:bg-orange-700', onClick: () => navigate('/employee/meetings') },
   ]);
 
   // Check if user is team lead
@@ -270,6 +292,112 @@ const EmployeeDashboardHome = () => {
 
     return () => unsubscribe();
   }, [user]);
+
+  // Fetch social media activities
+  useEffect(() => {
+    if (!user?.id || !user?.adminUid || user?.department !== 'Digital Marketing') {
+      setLoading(false);
+      return;
+    }
+
+    const socialMediaRef = ref(database, `users/${user.adminUid}/employees/${user.id}/socialmedia`);
+    const socialMediaQuery = query(socialMediaRef, orderByChild('createdAt'));
+
+    const unsubscribe = onValue(socialMediaQuery, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          const activities: SocialMediaActivity[] = Object.entries(data).map(([key, value]: [string, any]) => ({
+            id: key,
+            type: 'social_media',
+            action: `Scheduled ${value.platform} post`,
+            platform: value.platform,
+            timestamp: new Date(value.createdAt).getTime(),
+            content: value.content,
+            scheduledDate: value.scheduledDate,
+            status: value.status
+          })).sort((a, b) => b.timestamp - a.timestamp);
+
+          setSocialMediaActivities(activities);
+          setStats(prev => ({
+            ...prev,
+            scheduledPosts: activities.filter(a => a.status === 'scheduled').length
+          }));
+        } else {
+          setSocialMediaActivities([]);
+          setStats(prev => ({
+            ...prev,
+            scheduledPosts: 0
+          }));
+        }
+      } catch (error) {
+        console.error("Error fetching social media activities:", error);
+        toast.error("Failed to load social media activities");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Combine all activities for recent activities section
+  useEffect(() => {
+    const now = new Date();
+    const allActivities: RecentActivity[] = [];
+
+    // Add attendance activities
+    attendanceRecords.slice(0, 3).forEach(record => {
+      allActivities.push({
+        id: record.id,
+        type: 'attendance',
+        action: `Marked ${record.status} for ${new Date(record.date).toLocaleDateString()}`,
+        time: formatTimeDifference(now, new Date(record.timestamp)),
+        timestamp: record.timestamp
+      });
+    });
+
+    // Add social media activities
+    socialMediaActivities.slice(0, 3).forEach(activity => {
+      allActivities.push({
+        id: activity.id,
+        type: 'social_media',
+        action: activity.action,
+        time: formatTimeDifference(now, new Date(activity.timestamp)),
+        timestamp: activity.timestamp,
+        details: {
+          platform: activity.platform,
+          content: activity.content,
+          scheduledDate: activity.scheduledDate
+        }
+      });
+    });
+
+    // Sort all activities by timestamp
+    allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Take the most recent 5 activities
+    setRecentActivities(allActivities.slice(0, 5));
+  }, [attendanceRecords, socialMediaActivities]);
+
+  const formatTimeDifference = (now: Date, past: Date) => {
+    const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return `${diffInSeconds} seconds ago`;
+    }
+    
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) {
+      return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+    }
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) {
+      return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+    }
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+  };
 
   const calculateLeaveDays = (startDate: string, endDate: string) => {
     const start = new Date(startDate);
@@ -508,6 +636,18 @@ const EmployeeDashboardHome = () => {
     }
   };
 
+  const getPlatformColor = (platform: string) => {
+    const colors: Record<string, string> = {
+      'Facebook': 'bg-blue-100 text-blue-700',
+      'Instagram': 'bg-pink-100 text-pink-700',
+      'Twitter': 'bg-sky-100 text-sky-700',
+      'LinkedIn': 'bg-indigo-100 text-indigo-700',
+      'YouTube': 'bg-red-100 text-red-700',
+      'TikTok': 'bg-purple-100 text-purple-700'
+    };
+    return colors[platform] || 'bg-gray-100 text-gray-700';
+  };
+
   if (loading && leaveRequests.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -618,35 +758,25 @@ const EmployeeDashboardHome = () => {
           </Card>
         </motion.div>
 
-        <motion.div
-          variants={cardVariants}
-          initial="hidden"
-          animate="visible"
-          transition={{ delay: 0.5 }}
-        >
-          <Card className="hover:shadow-lg transition-shadow duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Today's Status</CardTitle>
-              {todayAttendance ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {todayAttendance ? (
-                  <span className="text-green-600">Present</span>
-                ) : (
-                  <span className="text-yellow-600">Not Marked</span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {todayAttendance ? `Punched in at ${todayAttendance.punchIn}` : 'Mark your attendance'}
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+        {user?.department === 'Digital Marketing' && (
+          <motion.div
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            transition={{ delay: 0.5 }}
+          >
+            <Card className="hover:shadow-lg transition-shadow duration-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Scheduled Posts</CardTitle>
+                <Share2 className="h-4 w-4 text-pink-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.scheduledPosts}</div>
+                <p className="text-xs text-muted-foreground">Social media posts</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
       </div>
 
       {/* Upcoming Meetings Preview */}
@@ -734,7 +864,7 @@ const EmployeeDashboardHome = () => {
               </div>
               {upcomingMeetings.length > 1 && (
                 <div className="text-center pt-4">
-                  <Button variant="ghost" className="text-blue-600">
+                  <Button variant="ghost" className="text-blue-600" onClick={() => navigate('/employee/meetings')}>
                     View all {upcomingMeetings.length} upcoming meetings
                   </Button>
                 </div>
@@ -836,7 +966,7 @@ const EmployeeDashboardHome = () => {
               {quickActions.map((action, index) => (
                 <Button
                   key={index}
-                  
+                  onClick={action.onClick}
                   className={`h-20 flex flex-col gap-2 ${action.color} text-white`}
                 >
                   <action.icon className="h-5 w-5" />
@@ -907,7 +1037,7 @@ const EmployeeDashboardHome = () => {
                 ))}
                 {leaveRequests.length > 3 && (
                   <div className="text-center pt-2">
-                    <Button variant="ghost" className="text-blue-600">
+                    <Button variant="ghost" className="text-blue-600" onClick={() => navigate('/employee/leaves')}>
                       View all {leaveRequests.length} leave requests
                     </Button>
                   </div>
@@ -933,18 +1063,43 @@ const EmployeeDashboardHome = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-start gap-3">
-                  <div className={`w-2 h-2 rounded-full mt-2 ${
-                    activity.type === 'project' ? 'bg-blue-500' :
-                    activity.type === 'attendance' ? 'bg-green-500' : 'bg-purple-500'
-                  }`} />
-                  <div className="flex-1">
-                    <p className="font-medium">{activity.action}</p>
-                    <p className="text-sm text-gray-500">{activity.time}</p>
-                  </div>
+              {recentActivities.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No recent activities found
                 </div>
-              ))}
+              ) : (
+                recentActivities.map((activity) => (
+                  <div key={activity.id} className="flex items-start gap-3">
+                    <div className={`w-2 h-2 rounded-full mt-2 ${
+                      activity.type === 'project' ? 'bg-blue-500' :
+                      activity.type === 'attendance' ? 'bg-green-500' :
+                      activity.type === 'social_media' ? 'bg-pink-500' : 'bg-purple-500'
+                    }`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{activity.action}</p>
+                        {activity.type === 'social_media' && activity.details && (
+                          <Badge className={getPlatformColor(activity.details.platform)}>
+                            {activity.details.platform}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500">{activity.time}</p>
+                      {activity.type === 'social_media' && activity.details?.content && (
+                        <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-600">
+                          <p className="truncate">{activity.details.content}</p>
+                          {activity.details.scheduledDate && (
+                            <div className="flex items-center gap-1 text-xs mt-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>Scheduled: {new Date(activity.details.scheduledDate).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>

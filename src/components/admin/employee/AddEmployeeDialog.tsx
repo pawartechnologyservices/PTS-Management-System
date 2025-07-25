@@ -6,13 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
 import { Plus, Upload, Camera, User, Phone, Calendar, DollarSign, FirstAid } from 'lucide-react';
 import { getDatabase, ref, set } from 'firebase/database';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, database } from '../../../firebase';
 import { useAuth } from '../../../hooks/useAuth';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { Calendar as CalendarComp } from '../../ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '../../../lib/utils';
+import { toast } from 'sonner';
 
 interface NewEmployee {
   name: string;
@@ -118,11 +119,18 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
 
     try {
       // 1. Create authentication user
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
+const adminEmail = auth.currentUser?.email;
+const adminPassword = prompt("Please re-enter your password to create employee:"); // Not ideal UX, but quick fix
+
+// 1. Create authentication user (logs in as new employee)
+const userCredential = await createUserWithEmailAndPassword(
+  auth,
+  formData.email,
+  formData.password
+);
+
+// 2. Immediately sign back in as admin
+await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
       const employeeUid = userCredential.user.uid;
 
       // 2. Prepare employee data for database
@@ -190,6 +198,7 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
       if (onSuccess) {
         onSuccess(employeeUid);
       }
+toast.success('Employee created successfully!');
 
       setOpen(false);
     } catch (err: any) {
@@ -202,6 +211,13 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {loading && (
+  <div className="loading-overlay">
+    <div className="spinner" />
+    <p>Creating employee, please wait...</p>
+  </div>
+)}
+
       <DialogTrigger asChild>
         <Button className="bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />
