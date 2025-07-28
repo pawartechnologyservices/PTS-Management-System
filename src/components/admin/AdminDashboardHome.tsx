@@ -605,7 +605,7 @@ const AdminDashboardHome = () => {
               </div>
             </div>
             
-            <div className="mt-4 pt-4 border-t flex justify-end">
+            {/* <div className="mt-4 pt-4 border-t flex justify-end">
               <Button
                 variant="outline"
                 onClick={closeNotification}
@@ -616,7 +616,7 @@ const AdminDashboardHome = () => {
               <Button onClick={closeNotification}>
                 Mark as Published
               </Button>
-            </div>
+            </div> */}
           </motion.div>
         </motion.div>
       )}

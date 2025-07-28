@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
 import { useChatStore } from '../../store/chatStore';
-import { ref, onValue, off, get } from 'firebase/database';
+import { ref, onValue, off, get, query, orderByChild, limitToLast } from 'firebase/database';
 import { database } from '../../firebase';
 
 interface User {
@@ -36,13 +36,14 @@ const UserList: React.FC<UserListProps> = ({
   onSearchChange,
   selectedUser,
   onUserSelect,
-  onlineUsers
+  onlineUsers,
 }) => {
   const { user: currentUser } = useAuth();
-  const { messages, unreadCounts, getChatId } = useChatStore();
+  const { messages, unreadCounts, getChatId, markAsRead } = useChatStore();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastMessages, setLastMessages] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (!currentUser) return;
@@ -53,11 +54,7 @@ const UserList: React.FC<UserListProps> = ({
     const fetchUsers = async () => {
       try {
         const allUsers: User[] = [];
-
-        // Determine admin ID
-        const adminId = currentUser.role === 'admin'
-          ? currentUser.id
-          : currentUser.adminUid;
+        const adminId = currentUser.role === 'admin' ? currentUser.id : (currentUser as any).adminUid;
 
         if (!adminId) {
           setError('Admin not found');
@@ -65,7 +62,6 @@ const UserList: React.FC<UserListProps> = ({
           return;
         }
 
-        // Fetch admin data
         const adminRef = ref(database, `users/${adminId}`);
         const adminSnap = await get(adminRef);
 
@@ -81,14 +77,13 @@ const UserList: React.FC<UserListProps> = ({
           name: adminData.name || '',
           email: adminData.email || '',
           profileImage: adminData.profileImage || '',
-          designation: adminData.designation || '',
-          department: adminData.department || '',
+          designation: adminData.designation || 'Administrator',
+          department: adminData.department || 'Management',
           status: adminData.status || '',
           isActive: adminData.status === 'active',
           role: 'admin',
         });
 
-        // Fetch employees under this admin
         const employeesRef = ref(database, `users/${adminId}/employees`);
         const employeesSnap = await get(employeesRef);
 
@@ -100,8 +95,8 @@ const UserList: React.FC<UserListProps> = ({
               name: empData.name || '',
               email: empData.email || '',
               profileImage: empData.profileImage || '',
-              designation: empData.designation || '',
-              department: empData.department || '',
+              designation: empData.designation || 'Employee',
+              department: empData.department || 'General',
               status: empData.status || '',
               isActive: empData.status === 'active',
               role: 'employee',
@@ -110,32 +105,28 @@ const UserList: React.FC<UserListProps> = ({
           });
         }
 
-        // Setup real-time status listeners
         const listeners: (() => void)[] = [];
+        const adminStatusRef = ref(database, `users/${adminId}/status`);
+        const employeesStatusRef = ref(database, `users/${adminId}/employees`);
 
-        const statusRefs = [
-          ref(database, `users/${adminId}/status`),
-          ref(database, `users/${adminId}/employees`)
-        ];
-
-        const adminStatusUnsub = onValue(statusRefs[0], snapshot => {
+        const adminStatusUnsub = onValue(adminStatusRef, (snapshot) => {
           const statusVal = snapshot.val();
-          setUsers(prev =>
-            prev.map(u =>
+          setUsers((prev) =>
+            prev.map((u) =>
               u.id === adminId
                 ? { ...u, status: statusVal, isActive: statusVal === 'active' }
                 : u
             )
           );
         });
-        listeners.push(() => off(statusRefs[0]));
+        listeners.push(() => off(adminStatusRef));
 
-        const empStatusUnsub = onValue(statusRefs[1], snapshot => {
-          snapshot.forEach(childSnap => {
+        const empStatusUnsub = onValue(employeesStatusRef, (snapshot) => {
+          snapshot.forEach((childSnap) => {
             const empId = childSnap.key!;
             const statusVal = childSnap.val().status;
-            setUsers(prev =>
-              prev.map(u =>
+            setUsers((prev) =>
+              prev.map((u) =>
                 u.id === empId
                   ? { ...u, status: statusVal, isActive: statusVal === 'active' }
                   : u
@@ -143,12 +134,52 @@ const UserList: React.FC<UserListProps> = ({
             );
           });
         });
-        listeners.push(() => off(statusRefs[1]));
+        listeners.push(() => off(employeesStatusRef));
+
+        const lastMessageListeners: (() => void)[] = [];
+
+        for (const user of allUsers) {
+          if (user.id === currentUser.id) continue;
+          
+          const chatId = getChatId(currentUser.id, user.id);
+          const messagesRef = query(
+            ref(database, `chats/${chatId}/messages`),
+            orderByChild('timestamp'),
+            limitToLast(1)
+          );
+
+          const unsub = onValue(messagesRef, (snapshot) => {
+            if (snapshot.exists()) {
+              const messagesData = snapshot.val();
+              const lastMsg = Object.values(messagesData)[0] as any;
+              
+              setLastMessages(prev => ({
+                ...prev,
+                [user.id]: {
+                  content: lastMsg.content,
+                  type: lastMsg.type,
+                  timestamp: lastMsg.timestamp,
+                  senderId: lastMsg.senderId,
+                  deleted: lastMsg.deleted
+                }
+              }));
+            } else {
+              setLastMessages(prev => {
+                const updated = {...prev};
+                delete updated[user.id];
+                return updated;
+              });
+            }
+          });
+
+          lastMessageListeners.push(() => off(messagesRef));
+        }
 
         setUsers(allUsers);
 
         return () => {
-          listeners.forEach(unsub => unsub());
+          listeners.forEach((unsub) => unsub());
+          lastMessageListeners.forEach((unsub) => unsub());
         };
       } catch (err) {
         console.error('Error fetching users:', err);
@@ -164,18 +195,19 @@ const UserList: React.FC<UserListProps> = ({
     };
   }, [currentUser]);
 
-  const filteredUsers = users.filter(u =>
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.designation?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.department?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const sortedUsers = [...users].sort((a, b) => {
+    const aLastMsg = lastMessages[a.id]?.timestamp || 0;
+    const bLastMsg = lastMessages[b.id]?.timestamp || 0;
+    return bLastMsg - aLastMsg;
+  });
 
-  const getLastMessage = (userId: string) => {
-    if (!currentUser) return null;
-    const chatId = getChatId(currentUser.id, userId);
-    return (messages[chatId] || []).slice(-1)[0] || null;
-  };
+  const filteredUsers = sortedUsers.filter(
+    (u) =>
+      u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.designation?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.department?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const getUnreadCount = (userId: string) => {
     if (!currentUser) return 0;
@@ -183,22 +215,37 @@ const UserList: React.FC<UserListProps> = ({
     return unreadCounts[chatId] || 0;
   };
 
-  const formatLastMessageTime = (timestamp: Date) => {
+  const formatLastMessageTime = (timestamp: number) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+
     const now = new Date();
-    const msgDate = new Date(timestamp);
-    const diffInHours = (now.getTime() - msgDate.getTime()) / (1000 * 60 * 60);
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
     if (diffInHours < 1) {
       const mins = Math.floor(diffInHours * 60);
       return mins === 0 ? 'now' : `${mins}m`;
     } else if (diffInHours < 24) {
       return `${Math.floor(diffInHours)}h`;
     } else {
-      return msgDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
   };
 
-  const truncateMessage = (content: string, maxLength = 30) =>
-    content.length <= maxLength ? content : `${content.slice(0, maxLength)}...`;
+  const truncateMessage = (content: any, maxLength = 30) => {
+    if (typeof content !== 'string') return '';
+    if (content.length <= maxLength) return content;
+    return `${content.slice(0, maxLength)}...`;
+  };
+
+  const handleUserClick = (user: User) => {
+    onUserSelect(user);
+    if (currentUser) {
+      const chatId = getChatId(currentUser.id, user.id);
+      markAsRead(chatId);
+    }
+  };
 
   if (loading) {
     return (
@@ -228,7 +275,10 @@ const UserList: React.FC<UserListProps> = ({
           <Button
             variant="outline"
             className="mt-4"
-            onClick={() => { setError(null); setLoading(true); }}
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+            }}
           >
             Retry
           </Button>
@@ -251,7 +301,7 @@ const UserList: React.FC<UserListProps> = ({
           <Input
             placeholder="Search or start new chat"
             value={searchTerm}
-            onChange={e => onSearchChange(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             className="pl-10 bg-white border-gray-200 rounded-lg focus-visible:ring-2 focus-visible:ring-blue-500"
           />
         </div>
@@ -266,12 +316,14 @@ const UserList: React.FC<UserListProps> = ({
           </div>
         ) : (
           filteredUsers.map((user, idx) => {
-            const lastMessage = getLastMessage(user.id);
+            const lastMessage = lastMessages[user.id];
             const unreadCount = getUnreadCount(user.id);
             const isOnline = onlineUsers.includes(user.id);
             const isSelected = selectedUser?.id === user.id;
             const isCurrentUser = user.id === currentUser?.id;
             const isAdmin = user.role === 'admin';
+            const hasUnread = unreadCount > 0;
+            const isLastMessageFromOther = lastMessage?.senderId !== currentUser?.id;
 
             return (
               <motion.div
@@ -282,13 +334,16 @@ const UserList: React.FC<UserListProps> = ({
                 className={`flex items-center p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
                   isSelected ? 'bg-gray-100 border-l-4 border-l-blue-500' : ''
                 }`}
-                onClick={() => !isCurrentUser && onUserSelect(user)}
+                onClick={() => !isCurrentUser && handleUserClick(user)}
               >
                 <div className="relative flex-shrink-0">
                   <Avatar className="w-12 h-12">
                     <AvatarImage src={user.profileImage} />
                     <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                      {user.name.split(' ').map(n => n[0]).join('')}
+                      {user.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')}
                     </AvatarFallback>
                   </Avatar>
                   {isOnline && !isCurrentUser && (
@@ -299,53 +354,56 @@ const UserList: React.FC<UserListProps> = ({
                       <span className="text-white text-xs font-bold">A</span>
                     </div>
                   )}
+                  {unreadCount > 0 && !isCurrentUser && (
+                    <div className="absolute -top-2 -right-2">
+                      <Badge className="bg-red-500 text-white rounded-full h-5 w-5 p-0 flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0 ml-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium text-gray-900 truncate">
-                      {user.name}
-                      {isCurrentUser && <span className="ml-2 text-xs text-blue-500">(You)</span>}
-                    </h3>
+                    <div>
+                      <h3 className={`font-medium ${hasUnread ? 'text-gray-900 font-semibold' : 'text-gray-900'}`}>
+                        {user.name}
+                        {isCurrentUser && (
+                          <span className="ml-2 text-xs text-blue-500">(You)</span>
+                        )}
+                      </h3>
+                      <p className="text-xs text-gray-500">
+                        {user.designation || 'No designation'}
+                        {user.department && ` • ${user.department}`}
+                      </p>
+                    </div>
                     <div className="flex items-center gap-2">
                       {lastMessage && (
-                        <span className="text-xs text-gray-500">
+                        <span className={`text-xs ${hasUnread && isLastMessageFromOther ? 'text-blue-500 font-medium' : 'text-gray-500'}`}>
                           {formatLastMessageTime(lastMessage.timestamp)}
                         </span>
-                      )}
-                      {unreadCount > 0 && !isCurrentUser && (
-                        <Badge className="bg-blue-600 text-white rounded-full min-w-[20px] h-5 text-xs flex items-center justify-center px-1.5">
-                          {unreadCount > 99 ? '99+' : unreadCount}
-                        </Badge>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mt-1">
-                    <p className="text-sm text-gray-600 truncate">
+                  <div className="mt-1">
+                    <p className={`text-sm truncate ${hasUnread && isLastMessageFromOther ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
                       {lastMessage ? (
                         <>
                           {lastMessage.type === 'image' && '📷 Photo'}
                           {lastMessage.type === 'video' && '🎥 Video'}
-                          {lastMessage.type === 'text' && truncateMessage(lastMessage.content)}
+                          {lastMessage.type === 'text' && typeof lastMessage.content === 'string' && (
+                            <>
+                              {lastMessage.senderId === currentUser?.id && 'You: '}
+                              {truncateMessage(lastMessage.content)}
+                            </>
+                          )}
                           {lastMessage.deleted && '🚫 This message was deleted'}
                         </>
                       ) : (
-                        <span className="text-gray-400">
-                          {user.designation || 'No designation'}
-                          {user.department && ` • ${user.department}`}
-                          {isAdmin && ' • Admin'}
-                        </span>
+                        <span className="text-gray-400">No messages yet</span>
                       )}
                     </p>
-
-                    {lastMessage && lastMessage.senderId === currentUser?.id && (
-                      <div className="flex-shrink-0 ml-2">
-                        {lastMessage.status === 'sent' && <span className="text-gray-400">✓</span>}
-                        {lastMessage.status === 'delivered' && <span className="text-gray-400">✓✓</span>}
-                        {lastMessage.status === 'read' && <span className="text-blue-500">✓✓</span>}
-                      </div>
-                    )}
                   </div>
                 </div>
               </motion.div>

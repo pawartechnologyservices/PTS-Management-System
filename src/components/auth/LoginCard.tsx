@@ -70,7 +70,7 @@ const LoginCard: React.FC<LoginCardProps> = ({
           />
         )}
         
-        {!isAdmin && !hideRegister && (
+        {/* {!isAdmin && !hideRegister && (
           <div className="mt-4 text-center">
             <button
               onClick={onRegister}
@@ -79,7 +79,7 @@ const LoginCard: React.FC<LoginCardProps> = ({
               New Employee? Register here
             </button>
           </div>
-        )}
+        )} */}
       </CardContent>
     </Card>
   );
