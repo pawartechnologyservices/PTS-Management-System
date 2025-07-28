@@ -45,6 +45,13 @@ interface AttendanceRecord {
   markedLateAt?: string;
   department?: string;
   designation?: string;
+  breaks?: {
+    [key: string]: {
+      breakIn: string;
+      breakOut?: string;
+      duration?: string;
+    }
+  };
 }
 
 interface LeaveRequest {
@@ -93,7 +100,7 @@ interface SocialMediaActivity {
 
 interface RecentActivity {
   id: string;
-  type: 'project' | 'attendance' | 'task' | 'social_media';
+  type: 'project' | 'attendance' | 'task' | 'social_media' | 'break';
   action: string;
   time: string;
   timestamp: number;
@@ -104,6 +111,8 @@ const EmployeeDashboardHome = () => {
   const { user } = useAuth();
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [breakLoading, setBreakLoading] = useState(false);
+  const [currentBreakId, setCurrentBreakId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     attendanceRate: 0,
     leavesUsed: 0,
@@ -111,7 +120,8 @@ const EmployeeDashboardHome = () => {
     upcomingMeetings: 0,
     presentDays: 0,
     totalDays: 0,
-    scheduledPosts: 0
+    scheduledPosts: 0,
+    totalBreakTime: 0
   });
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
@@ -183,11 +193,25 @@ const EmployeeDashboardHome = () => {
           const totalDays = monthlyRecords.length;
           const attendanceRate = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
+          // Calculate total break time
+          let totalBreakTime = 0;
+          records.forEach(record => {
+            if (record.breaks) {
+              Object.values(record.breaks).forEach(breakItem => {
+                if (breakItem.duration) {
+                  const [hours, minutes] = breakItem.duration.split(':').map(Number);
+                  totalBreakTime += hours * 60 + minutes;
+                }
+              });
+            }
+          });
+
           setStats(prev => ({
             ...prev,
             attendanceRate,
             presentDays,
-            totalDays
+            totalDays,
+            totalBreakTime
           }));
         } else {
           setAttendanceRecords([]);
@@ -195,7 +219,8 @@ const EmployeeDashboardHome = () => {
             ...prev,
             attendanceRate: 0,
             presentDays: 0,
-            totalDays: 0
+            totalDays: 0,
+            totalBreakTime: 0
           }));
         }
       } catch (error) {
@@ -353,6 +378,22 @@ const EmployeeDashboardHome = () => {
         time: formatTimeDifference(now, new Date(record.timestamp)),
         timestamp: record.timestamp
       });
+
+      // Add break activities if they exist
+      if (record.breaks) {
+        Object.entries(record.breaks).forEach(([breakId, breakData]) => {
+          allActivities.push({
+            id: breakId,
+            type: 'break',
+            action: breakData.breakOut 
+              ? `Completed break (${breakData.duration})`
+              : `Started break at ${breakData.breakIn}`,
+            time: formatTimeDifference(now, new Date(record.timestamp)),
+            timestamp: record.timestamp,
+            details: breakData
+          });
+        });
+      }
     });
 
     // Add social media activities
@@ -473,9 +514,24 @@ const EmployeeDashboardHome = () => {
           );
         });
         
-        setTodayAttendance(todayRecord || null);
+        if (todayRecord) {
+          setTodayAttendance(todayRecord);
+          // Check if there's any active break (break without breakOut)
+          if (todayRecord.breaks) {
+            const activeBreak = Object.entries(todayRecord.breaks).find(
+              ([, breakData]) => !breakData.breakOut
+            );
+            if (activeBreak) {
+              setCurrentBreakId(activeBreak[0]);
+            }
+          }
+        } else {
+          setTodayAttendance(null);
+          setCurrentBreakId(null);
+        }
       } else {
         setTodayAttendance(null);
+        setCurrentBreakId(null);
       }
 
       // Then set up the real-time listener
@@ -497,9 +553,28 @@ const EmployeeDashboardHome = () => {
             );
           });
           
-          setTodayAttendance(updatedTodayRecord || null);
+          if (updatedTodayRecord) {
+            setTodayAttendance(updatedTodayRecord);
+            // Check if there's any active break (break without breakOut)
+            if (updatedTodayRecord.breaks) {
+              const activeBreak = Object.entries(updatedTodayRecord.breaks).find(
+                ([, breakData]) => !breakData.breakOut
+              );
+              if (activeBreak) {
+                setCurrentBreakId(activeBreak[0]);
+              } else {
+                setCurrentBreakId(null);
+              }
+            } else {
+              setCurrentBreakId(null);
+            }
+          } else {
+            setTodayAttendance(null);
+            setCurrentBreakId(null);
+          }
         } else {
           setTodayAttendance(null);
+          setCurrentBreakId(null);
         }
       });
 
@@ -508,6 +583,7 @@ const EmployeeDashboardHome = () => {
       console.error("Error loading attendance data:", error);
       toast.error("Failed to load attendance data");
       setTodayAttendance(null);
+      setCurrentBreakId(null);
     } finally {
       setLoading(false);
     }
@@ -579,6 +655,12 @@ const EmployeeDashboardHome = () => {
       return;
     }
 
+    // Check if there's an active break
+    if (currentBreakId) {
+      toast.error("Please end your current break before punching out");
+      return;
+    }
+
     setLoading(true);
     try {
       const now = new Date();
@@ -596,6 +678,116 @@ const EmployeeDashboardHome = () => {
       toast.error("Failed to punch out");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBreakIn = async () => {
+    if (!user?.id || !user?.adminUid || !todayAttendance?.id) {
+      toast.error("Cannot start break - missing required data");
+      return;
+    }
+
+    if (currentBreakId) {
+      toast.error("You already have an active break");
+      return;
+    }
+
+    setBreakLoading(true);
+    try {
+      const now = new Date();
+      const breakInTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const breakId = `break_${now.getTime()}`;
+      
+      const updates = {
+        [`breaks/${breakId}/breakIn`]: breakInTime,
+        [`breaks/${breakId}/timestamp`]: now.getTime()
+      };
+      
+      const recordRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching/${todayAttendance.id}`);
+      await update(recordRef, updates);
+      
+      setCurrentBreakId(breakId);
+      toast.success("Break started successfully!");
+    } catch (error) {
+      console.error("Break-in error:", error);
+      toast.error("Failed to start break");
+    } finally {
+      setBreakLoading(false);
+    }
+  };
+
+  const calculateBreakDuration = (breakInTime: string, breakOutTime: string) => {
+    try {
+      // Parse the time strings (format: "HH:MM AM/PM")
+      const parseTime = (timeStr: string) => {
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+        let totalHours = hours;
+        
+        if (period === 'PM' && hours < 12) {
+          totalHours += 12;
+        } else if (period === 'AM' && hours === 12) {
+          totalHours = 0;
+        }
+        
+        return totalHours * 60 + minutes; // Convert to total minutes
+      };
+
+      const inMinutes = parseTime(breakInTime);
+      const outMinutes = parseTime(breakOutTime);
+
+      // Handle case where break spans midnight
+      let durationMinutes = outMinutes - inMinutes;
+      if (durationMinutes < 0) {
+        durationMinutes += 24 * 60; // Add 24 hours if negative
+      }
+
+      const hours = Math.floor(durationMinutes / 60);
+      const minutes = durationMinutes % 60;
+
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    } catch (error) {
+      console.error('Error calculating break duration:', error);
+      return '00:00';
+    }
+  };
+
+  const handleBreakOut = async () => {
+    if (!user?.id || !user?.adminUid || !todayAttendance?.id || !currentBreakId) {
+      toast.error("Cannot end break - missing required data");
+      return;
+    }
+
+    setBreakLoading(true);
+    try {
+      const now = new Date();
+      const breakOutTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      // Get the break in time
+      const breakInTime = todayAttendance.breaks?.[currentBreakId]?.breakIn;
+      if (!breakInTime) {
+        throw new Error("Break in time not found");
+      }
+      
+      // Calculate duration
+      const duration = calculateBreakDuration(breakInTime, breakOutTime);
+      
+      const updates = {
+        [`breaks/${currentBreakId}/breakOut`]: breakOutTime,
+        [`breaks/${currentBreakId}/duration`]: duration,
+        [`breaks/${currentBreakId}/timestamp`]: now.getTime()
+      };
+      
+      const recordRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching/${todayAttendance.id}`);
+      await update(recordRef, updates);
+      
+      setCurrentBreakId(null);
+      toast.success("Break ended successfully!");
+    } catch (error) {
+      console.error("Break-out error:", error);
+      toast.error("Failed to end break");
+    } finally {
+      setBreakLoading(false);
     }
   };
 
@@ -893,34 +1085,106 @@ const EmployeeDashboardHome = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
               </div>
             ) : todayAttendance ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div>
-                    <p className="text-sm text-gray-600">Punch In</p>
-                    <p className="text-lg font-semibold text-green-600">{todayAttendance.punchIn}</p>
-                  </div>
-                  {todayAttendance.punchOut && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-6">
                     <div>
-                      <p className="text-sm text-gray-600">Punch Out</p>
-                      <p className="text-lg font-semibold text-red-600">{todayAttendance.punchOut}</p>
+                      <p className="text-sm text-gray-600">Punch In</p>
+                      <p className="text-lg font-semibold text-green-600">{todayAttendance.punchIn}</p>
+                    </div>
+                    {todayAttendance.punchOut && (
+                      <div>
+                        <p className="text-sm text-gray-600">Punch Out</p>
+                        <p className="text-lg font-semibold text-red-600">{todayAttendance.punchOut}</p>
+                      </div>
+                    )}
+                    <Badge variant="outline" className="text-green-600 border-green-200">
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Present
+                    </Badge>
+                  </div>
+                  {!todayAttendance.punchOut ? (
+                    <Button 
+                      onClick={handlePunchOut}
+                      className="bg-red-600 hover:bg-red-700"
+                      disabled={loading}
+                    >
+                      {loading ? "Processing..." : "Punch Out"}
+                    </Button>
+                  ) : (
+                    <div className="text-sm text-gray-500">Attendance completed for today</div>
+                  )}
+                </div>
+
+                {/* Break Management */}
+                <div className="border-t pt-4">
+                  <h3 className="font-medium mb-3">Break Management</h3>
+                  {todayAttendance.breaks && Object.entries(todayAttendance.breaks).length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium mb-2">Today's Breaks:</h4>
+                      <div className="space-y-2">
+                        {Object.entries(todayAttendance.breaks).map(([breakId, breakData]) => (
+                          <div key={breakId} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <div className="flex items-center gap-4">
+                              <div>
+                                <p className="text-sm text-gray-600">Break In</p>
+                                <p className="font-medium">{breakData.breakIn}</p>
+                              </div>
+                              {breakData.breakOut ? (
+                                <>
+                                  <div>
+                                    <p className="text-sm text-gray-600">Break Out</p>
+                                    <p className="font-medium">{breakData.breakOut}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm text-gray-600">Duration</p>
+                                    <p className="font-medium">{breakData.duration || '--:--'}</p>
+                                  </div>
+                                </>
+                              ) : (
+                                <Badge className="bg-yellow-100 text-yellow-700">
+                                  In Progress
+                                </Badge>
+                              )}
+                            </div>
+                            {!breakData.breakOut && breakId === currentBreakId && (
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={handleBreakOut}
+                                disabled={breakLoading}
+                              >
+                                {breakLoading ? "Ending..." : "End Break"}
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  <Badge variant="outline" className="text-green-600 border-green-200">
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    Present
-                  </Badge>
+
+                  {!todayAttendance.punchOut && (
+                    <div className="flex items-center gap-4">
+                      {currentBreakId ? (
+                        <Button 
+                          onClick={handleBreakOut}
+                          className="bg-yellow-600 hover:bg-yellow-700"
+                          disabled={breakLoading}
+                        >
+                          {breakLoading ? "Ending Break..." : "End Current Break"}
+                        </Button>
+                      ) : (
+                        <Button 
+                          onClick={handleBreakIn}
+                          className="bg-blue-600 hover:bg-blue-700"
+                          disabled={breakLoading}
+                        >
+                          {breakLoading ? "Starting..." : "Start New Break"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                {!todayAttendance.punchOut ? (
-                  <Button 
-                    onClick={handlePunchOut}
-                    className="bg-red-600 hover:bg-red-700"
-                    disabled={loading}
-                  >
-                    {loading ? "Processing..." : "Punch Out"}
-                  </Button>
-                ) : (
-                  <div className="text-sm text-gray-500">Attendance completed for today</div>
-                )}
               </div>
             ) : (
               <div className="flex items-center justify-between">
@@ -1073,7 +1337,8 @@ const EmployeeDashboardHome = () => {
                     <div className={`w-2 h-2 rounded-full mt-2 ${
                       activity.type === 'project' ? 'bg-blue-500' :
                       activity.type === 'attendance' ? 'bg-green-500' :
-                      activity.type === 'social_media' ? 'bg-pink-500' : 'bg-purple-500'
+                      activity.type === 'social_media' ? 'bg-pink-500' : 
+                      activity.type === 'break' ? 'bg-yellow-500' : 'bg-purple-500'
                     }`} />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -1081,6 +1346,11 @@ const EmployeeDashboardHome = () => {
                         {activity.type === 'social_media' && activity.details && (
                           <Badge className={getPlatformColor(activity.details.platform)}>
                             {activity.details.platform}
+                          </Badge>
+                        )}
+                        {activity.type === 'break' && (
+                          <Badge className="bg-yellow-100 text-yellow-700">
+                            Break
                           </Badge>
                         )}
                       </div>
