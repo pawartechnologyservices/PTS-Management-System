@@ -1,15 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import {
+  Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Undo2
+} from 'lucide-react';
+import {
+  Card, CardContent, CardHeader, CardTitle
+} from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '../ui/select';
 import { toast } from '../ui/use-toast';
 import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
-import { ref, onValue, query, orderByChild, update } from 'firebase/database';
+import {
+  ref, onValue, query, orderByChild, update
+} from 'firebase/database';
 
 interface Employee {
   id: string;
@@ -32,6 +40,9 @@ interface AttendanceRecord {
   timestamp: number;
   markedLateBy?: string;
   markedLateAt?: string;
+  deleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 const AttendanceManagement = () => {
@@ -42,6 +53,7 @@ const AttendanceManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -74,7 +86,7 @@ const AttendanceManagement = () => {
     employees.forEach(employee => {
       const attendanceRef = ref(database, `users/${user.id}/employees/${employee.id}/punching`);
       const attendanceQuery = query(attendanceRef, orderByChild('timestamp'));
-      
+
       const unsubscribe = onValue(attendanceQuery, (snapshot) => {
         const data = snapshot.val();
         if (data) {
@@ -84,13 +96,11 @@ const AttendanceManagement = () => {
             employeeName: employee.name,
             ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName'>)
           }));
-          
-          // Update allRecords with new data for this employee
+
           const existingRecords = allRecords.filter(r => r.employeeId !== employee.id);
           allRecords.splice(0, allRecords.length, ...existingRecords, ...records);
           setAttendanceRecords([...allRecords].sort((a, b) => b.timestamp - a.timestamp));
         } else {
-          // Remove records for this employee if no data exists
           const updatedRecords = allRecords.filter(r => r.employeeId !== employee.id);
           allRecords.splice(0, allRecords.length, ...updatedRecords);
           setAttendanceRecords([...allRecords]);
@@ -101,22 +111,25 @@ const AttendanceManagement = () => {
     });
 
     setLoading(false);
-    
+
     return () => unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
   }, [user, employees]);
 
   useEffect(() => {
     let filtered = attendanceRecords;
 
+    // Filter based on deleted status
+    filtered = filtered.filter(record => showDeleted ? record.deleted : !record.deleted);
+
     if (searchTerm) {
-      filtered = filtered.filter(record => 
+      filtered = filtered.filter(record =>
         record.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         record.employeeId?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (filterDate) {
-      filtered = filtered.filter(record => 
+      filtered = filtered.filter(record =>
         new Date(record.date).toDateString() === new Date(filterDate).toDateString()
       );
     }
@@ -126,12 +139,11 @@ const AttendanceManagement = () => {
     }
 
     setFilteredRecords(filtered);
-  }, [searchTerm, filterDate, filterStatus, attendanceRecords]);
+  }, [searchTerm, filterDate, filterStatus, attendanceRecords, showDeleted]);
 
   const markAsLate = async (recordId: string, employeeId: string) => {
     try {
       const recordRef = ref(database, `users/${user?.id}/employees/${employeeId}/punching/${recordId}`);
-      
       await update(recordRef, {
         status: 'late',
         markedLateBy: user?.name || 'admin',
@@ -154,15 +166,17 @@ const AttendanceManagement = () => {
   };
 
   const deleteAttendanceRecord = async (recordId: string, employeeId: string) => {
-    if (!window.confirm('Are you sure you want to delete this attendance record?')) return;
-
     try {
       const recordRef = ref(database, `users/${user?.id}/employees/${employeeId}/punching/${recordId}`);
-      await update(recordRef, null); // Setting to null removes the record
+      await update(recordRef, {
+        deleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedBy: user?.name || 'admin'
+      });
 
       toast({
         title: "Record Deleted",
-        description: "Attendance record has been deleted successfully",
+        description: "Attendance record has been moved to trash",
         variant: "default",
       });
     } catch (error) {
@@ -170,6 +184,33 @@ const AttendanceManagement = () => {
       toast({
         title: "Error",
         description: "Failed to delete attendance record",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const restoreAttendanceRecord = async (recordId: string, employeeId: string) => {
+    try {
+      const recordRef = ref(database, `users/${user?.id}/employees/${employeeId}/punching/${recordId}`);
+      await update(recordRef, {
+        deleted: false,
+        deletedAt: null,
+        deletedBy: null
+      });
+
+      toast({
+        title: "Record Restored",
+        description: "Attendance record has been restored successfully",
+        variant: "default",
+      });
+
+      // Automatically switch back to active records view
+      setShowDeleted(false);
+    } catch (error) {
+      console.error("Error restoring record:", error);
+      toast({
+        title: "Error",
+        description: "Failed to restore attendance record",
         variant: "destructive",
       });
     }
@@ -185,16 +226,20 @@ const AttendanceManagement = () => {
   };
 
   const exportAttendance = () => {
+    // Only export non-deleted records
+    const recordsToExport = attendanceRecords.filter(record => !record.deleted);
+    
     const csvContent = [
-      ['Employee Name', 'Employee ID', 'Date', 'Punch In', 'Punch Out', 'Status', 'Work Mode'],
-      ...filteredRecords.map(record => [
+      ['Employee Name', 'Employee ID', 'Date', 'Punch In', 'Punch Out', 'Status', 'Work Mode', 'Deleted'],
+      ...recordsToExport.map(record => [
         record.employeeName,
         record.employeeId,
         new Date(record.date).toLocaleDateString(),
         record.punchIn || '-',
         record.punchOut || '-',
         record.status,
-        record.workMode || 'office'
+        record.workMode || 'office',
+        record.deleted ? 'Yes' : 'No'
       ])
     ].map(row => row.join(',')).join('\n');
 
@@ -239,7 +284,7 @@ const AttendanceManagement = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                   <div className="relative">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
@@ -265,6 +310,23 @@ const AttendanceManagement = () => {
                       <SelectItem value="late">Late</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Button 
+                    variant={showDeleted ? "default" : "outline"} 
+                    onClick={() => setShowDeleted(!showDeleted)}
+                    className="flex items-center gap-2"
+                  >
+                    {showDeleted ? (
+                      <>
+                        <Undo2 className="h-4 w-4" />
+                        Show Active
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4" />
+                        Show Deleted
+                      </>
+                    )}
+                  </Button>
                   <Button onClick={exportAttendance} className="w-full">
                     <Download className="h-4 w-4 mr-2" />
                     Export
@@ -282,8 +344,12 @@ const AttendanceManagement = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Attendance Records ({filteredRecords.length})
+                  {showDeleted ? (
+                    <Trash2 className="h-4 w-4" />
+                  ) : (
+                    <Users className="h-4 w-4" />
+                  )}
+                  {showDeleted ? 'Deleted Records' : 'Attendance Records'} ({filteredRecords.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -307,12 +373,17 @@ const AttendanceManagement = () => {
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.05 }}
-                          className="border-b hover:bg-gray-50"
+                          className={`border-b hover:bg-gray-50 ${record.deleted ? 'bg-gray-100' : ''}`}
                         >
                           <td className="p-3">
                             <div>
                               <p className="font-medium">{record.employeeName}</p>
                               <p className="text-sm text-gray-500">{record.employeeId}</p>
+                              {record.deleted && (
+                                <p className="text-xs text-red-500 mt-1">
+                                  Deleted on {new Date(record.deletedAt || '').toLocaleString()}
+                                </p>
+                              )}
                             </div>
                           </td>
                           <td className="p-3">
@@ -334,7 +405,7 @@ const AttendanceManagement = () => {
                             <Badge className={getStatusColor(record.status)}>
                               {record.status}
                             </Badge>
-                            {record.markedLateBy && (
+                            {record.markedLateBy && !record.deleted && (
                               <p className="text-xs text-gray-500 mt-1">
                                 Marked by {record.markedLateBy}
                               </p>
@@ -347,25 +418,39 @@ const AttendanceManagement = () => {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-1">
-                              {record.status !== 'late' && record.status !== 'absent' && (
+                              {!record.deleted ? (
+                                <>
+                                  {record.status !== 'late' && record.status !== 'absent' && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => markAsLate(record.id, record.employeeId)}
+                                      className="text-yellow-600 hover:text-yellow-700"
+                                    >
+                                      <AlertTriangle className="h-3 w-3 mr-1" />
+                                      Mark Late
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => deleteAttendanceRecord(record.id, record.employeeId)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </>
+                              ) : (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => markAsLate(record.id, record.employeeId)}
-                                  className="text-yellow-600 hover:text-yellow-700"
+                                  onClick={() => restoreAttendanceRecord(record.id, record.employeeId)}
+                                  className="text-green-600 hover:text-green-700"
                                 >
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Mark Late
+                                  <Undo2 className="h-3 w-3 mr-1" />
+                                  Restore
                                 </Button>
                               )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => deleteAttendanceRecord(record.id, record.employeeId)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
                             </div>
                           </td>
                         </motion.tr>
@@ -374,7 +459,7 @@ const AttendanceManagement = () => {
                   </table>
                   {filteredRecords.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
-                      No attendance records found
+                      {showDeleted ? 'No deleted records found' : 'No attendance records found'}
                     </div>
                   )}
                 </div>
