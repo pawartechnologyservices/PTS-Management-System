@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plane, Plus, Calendar, Clock } from 'lucide-react';
+import { Plane, Plus, Calendar, Clock, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -29,6 +29,17 @@ interface LeaveRequest {
   approvedBy?: string;
 }
 
+interface Notification {
+  id: string;
+  type: 'approved' | 'rejected';
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  timestamp: number;
+  read: boolean;
+}
+
 const EmployeeLeaves = () => {
   const { user } = useAuth();
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -40,8 +51,21 @@ const EmployeeLeaves = () => {
     reason: ''
   });
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   const leaveTypes = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Maternity Leave', 'Paternity Leave', 'Emergency Leave'];
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
@@ -59,6 +83,36 @@ const EmployeeLeaves = () => {
             id: key,
             ...(value as Omit<LeaveRequest, 'id'>)
           }));
+          
+          // Check for status changes
+          requests.forEach(request => {
+            const existingRequest = leaveRequests.find(r => r.id === request.id);
+            
+            // If this is a new approval
+            if (existingRequest && existingRequest.status === 'pending' && request.status === 'approved') {
+              showSystemNotification({
+                type: 'approved',
+                leaveType: request.leaveType,
+                startDate: request.startDate,
+                endDate: request.endDate,
+                status: request.status,
+                timestamp: new Date(request.approvedAt || Date.now()).getTime()
+              });
+            }
+            
+            // If this is a new rejection
+            if (existingRequest && existingRequest.status === 'pending' && request.status === 'rejected') {
+              showSystemNotification({
+                type: 'rejected',
+                leaveType: request.leaveType,
+                startDate: request.startDate,
+                endDate: request.endDate,
+                status: request.status,
+                timestamp: new Date(request.rejectedAt || Date.now()).getTime()
+              });
+            }
+          });
+
           // Sort by appliedAt date (newest first)
           requests.sort((a, b) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
           setLeaveRequests(requests);
@@ -78,7 +132,69 @@ const EmployeeLeaves = () => {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, leaveRequests]);
+
+  const showSystemNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `${notification.type}-${notification.timestamp}`,
+      read: false
+    };
+
+    // Add to in-app notifications
+    setNotifications(prev => [newNotification, ...prev]);
+    setCurrentNotification(newNotification);
+    setShowNotification(true);
+
+    // Show browser notification if permission is granted
+    if (notificationPermission === 'granted') {
+      const notificationDetails = getNotificationDetails(notification.type);
+      try {
+        new Notification(notificationDetails.title, {
+          body: notificationDetails.description
+            .replace('{leaveType}', notification.leaveType)
+            .replace('{startDate}', new Date(notification.startDate).toLocaleDateString())
+            .replace('{endDate}', new Date(notification.endDate).toLocaleDateString()),
+          icon: '/logo.png', // Replace with your app's icon
+          tag: `leave-${notification.type}-${notification.timestamp}`
+        });
+      } catch (error) {
+        console.error('Error showing system notification:', error);
+      }
+    }
+
+    // Auto-hide after 5 seconds
+    const timeoutId = setTimeout(() => {
+      setShowNotification(false);
+      // Delay clearing current notification to allow animation to complete
+      setTimeout(() => setCurrentNotification(null), 500);
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  };
+
+  const getNotificationDetails = (type: string) => {
+    switch (type) {
+      case 'approved':
+        return { 
+          title: 'Leave Approved', 
+          description: 'Your {leaveType} leave from {startDate} to {endDate} has been approved',
+          color: 'bg-green-100 text-green-800 border-green-500'
+        };
+      case 'rejected':
+        return { 
+          title: 'Leave Rejected', 
+          description: 'Your {leaveType} leave from {startDate} to {endDate} has been rejected',
+          color: 'bg-red-100 text-red-800 border-red-500'
+        };
+      default:
+        return { 
+          title: 'Leave Update', 
+          description: 'There has been an update to your leave request',
+          color: 'bg-gray-100 text-gray-800 border-gray-500'
+        };
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,7 +292,49 @@ const EmployeeLeaves = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Notification Popup */}
+      {showNotification && currentNotification && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm w-full ${getNotificationDetails(currentNotification.type).color} border-l-4`}
+        >
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="ml-3 w-0 flex-1 pt-0.5">
+              <p className="text-sm font-medium">
+                {getNotificationDetails(currentNotification.type).title}
+              </p>
+              <p className="mt-1 text-sm">
+                {getNotificationDetails(currentNotification.type).description
+                  .replace('{leaveType}', currentNotification.leaveType)
+                  .replace('{startDate}', new Date(currentNotification.startDate).toLocaleDateString())
+                  .replace('{endDate}', new Date(currentNotification.endDate).toLocaleDateString())}
+              </p>
+              <p className="mt-1 text-xs text-gray-600">
+                {new Date(currentNotification.timestamp).toLocaleTimeString()}
+              </p>
+            </div>
+            <div className="ml-4 flex-shrink-0 flex">
+              <button
+                onClick={() => setShowNotification(false)}
+                className="rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}

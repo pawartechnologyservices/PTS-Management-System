@@ -159,6 +159,9 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({
 
   const latestSalary = getLatestSalarySlip();
 
+  // Get the base salary - first try from latest salary slip, then from employee data
+  const baseSalary = latestSalary?.basicSalary || employee.salary;
+
   return (
     <Dialog open={!!employee} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -267,7 +270,7 @@ const EmployeeDetailsDialog: React.FC<EmployeeDetailsDialogProps> = ({
                         <DollarSign className="w-4 h-4" />
                         Base Salary
                       </label>
-                      <p className="font-semibold">{formatCurrency(employee.salary)}</p>
+                      <p className="font-semibold">{formatCurrency(baseSalary)}</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500 flex items-center gap-1">

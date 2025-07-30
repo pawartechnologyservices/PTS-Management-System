@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -23,8 +23,21 @@ interface AttendanceRecord {
   totalHours?: string;
   markedLateBy?: string;
   markedLateAt?: string;
+  markedHalfDayBy?: string;
+  markedHalfDayAt?: string;
   department?: string;
   designation?: string;
+}
+
+interface Notification {
+  id: string;
+  type: 'late' | 'half-day' | 'status-reset';
+  changedBy: string;
+  changedAt: string;
+  date: string;
+  status: string;
+  timestamp: number;
+  read: boolean;
 }
 
 const EmployeeAttendance = () => {
@@ -34,11 +47,42 @@ const EmployeeAttendance = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    const requestNotificationPermission = async () => {
+      if ('Notification' in window) {
+        try {
+          const permission = await Notification.requestPermission();
+          setNotificationPermission(permission);
+          
+          if (permission === 'granted') {
+            console.log('Notification permission granted');
+          }
+        } catch (error) {
+          console.error('Error requesting notification permission:', error);
+        }
+      } else if ('serviceWorker' in navigator && 'PushManager' in window) {
+        console.log('Push notifications might be supported');
+      } else {
+        console.log('This browser does not support notifications');
+      }
+    };
+
+    requestNotificationPermission();
+  }, []);
+
+  // Track previous records for comparison
+  const [prevRecords, setPrevRecords] = useState<AttendanceRecord[]>([]);
 
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
@@ -50,7 +94,7 @@ const EmployeeAttendance = () => {
     setLoading(true);
     const attendanceRef = ref(database, `users/${user.adminUid}/employees/${user.id}/punching`);
     const attendanceQuery = query(attendanceRef, orderByChild('timestamp'));
-
+    
     const unsubscribe = onValue(attendanceQuery, (snapshot) => {
       try {
         const data = snapshot.val();
@@ -60,9 +104,54 @@ const EmployeeAttendance = () => {
             ...(value as Omit<AttendanceRecord, 'id'>)
           })).sort((a, b) => b.timestamp - a.timestamp);
           
+          // Check for status changes by comparing with previous records
+          records.forEach(record => {
+            const prevRecord = prevRecords.find(r => r.id === record.id);
+            
+            // If this is a new late marking
+            if (prevRecord && prevRecord.status !== 'late' && record.status === 'late') {
+              showSystemNotification({
+                type: 'late',
+                changedBy: record.markedLateBy || 'Admin',
+                changedAt: record.markedLateAt || new Date().toISOString(),
+                date: record.date,
+                status: record.status,
+                timestamp: record.timestamp
+              });
+            }
+            
+            // If this is a new half-day marking
+            if (prevRecord && prevRecord.status !== 'half-day' && record.status === 'half-day') {
+              showSystemNotification({
+                type: 'half-day',
+                changedBy: record.markedHalfDayBy || 'Admin',
+                changedAt: record.markedHalfDayAt || new Date().toISOString(),
+                date: record.date,
+                status: record.status,
+                timestamp: record.timestamp
+              });
+            }
+            
+            // If status was reset from late/half-day to present
+            if (prevRecord && 
+                (prevRecord.status === 'late' || prevRecord.status === 'half-day') && 
+                record.status === 'present') {
+              showSystemNotification({
+                type: 'status-reset',
+                changedBy: record.markedLateBy || record.markedHalfDayBy || 'Admin',
+                changedAt: new Date().toISOString(),
+                date: record.date,
+                status: record.status,
+                timestamp: record.timestamp
+              });
+            }
+          });
+
+          setPrevRecords(records); // Update previous records for next comparison
           setAttendanceRecords(records);
         } else {
           setAttendanceRecords([]);
+          setPrevRecords([]);
         }
       } catch (error) {
         console.error("Error fetching attendance data:", error);
@@ -73,7 +162,97 @@ const EmployeeAttendance = () => {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, prevRecords]); // Only depend on user and prevRecords
+
+  const showSystemNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `${notification.type}-${notification.timestamp}`,
+      read: false
+    };
+
+    // Add to in-app notifications
+    setNotifications(prev => [newNotification, ...prev]);
+    setCurrentNotification(newNotification);
+    setShowNotification(true);
+
+    // Show browser notification if permission is granted
+    if (notificationPermission === 'granted') {
+      const notificationDetails = getNotificationDetails(notification.type);
+      try {
+        const notificationOptions = {
+          body: notificationDetails.description
+            .replace('{date}', new Date(notification.date).toLocaleDateString())
+            .replace('{changedBy}', notification.changedBy),
+          icon: '/logo.png',
+          badge: '/badge.png',
+          vibrate: [200, 100, 200],
+          tag: `attendance-${notification.type}-${notification.timestamp}`,
+          data: {
+            url: window.location.href
+          }
+        };
+
+        const notificationInstance = new Notification(notificationDetails.title, notificationOptions);
+
+        notificationInstance.onclick = () => {
+          window.focus();
+          notificationInstance.close();
+        };
+
+      } catch (error) {
+        console.error('Error showing system notification:', error);
+        
+        try {
+          const fallbackOptions = {
+            body: notificationDetails.description
+              .replace('{date}', new Date(notification.date).toLocaleDateString())
+              .replace('{changedBy}', notification.changedBy),
+            icon: '/logo.png'
+          };
+          new Notification(notificationDetails.title, fallbackOptions);
+        } catch (fallbackError) {
+          console.error('Fallback notification also failed:', fallbackError);
+        }
+      }
+    }
+
+    const timeoutId = setTimeout(() => {
+      setShowNotification(false);
+      setTimeout(() => setCurrentNotification(null), 500);
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  };
+
+  const getNotificationDetails = (type: string) => {
+    switch (type) {
+      case 'late':
+        return { 
+          title: 'Marked as Late', 
+          description: 'Your attendance for {date} has been marked as late by {changedBy}',
+          color: 'bg-yellow-100 text-yellow-800 border-yellow-500'
+        };
+      case 'half-day':
+        return { 
+          title: 'Marked as Half Day', 
+          description: 'Your attendance for {date} has been marked as half day by {changedBy}',
+          color: 'bg-blue-100 text-blue-800 border-blue-500'
+        };
+      case 'status-reset':
+        return { 
+          title: 'Status Reset', 
+          description: 'Your attendance status for {date} has been reset to present by {changedBy}',
+          color: 'bg-green-100 text-green-800 border-green-500'
+        };
+      default:
+        return { 
+          title: 'Attendance Update', 
+          description: 'Your attendance status has been updated',
+          color: 'bg-gray-100 text-gray-800 border-gray-500'
+        };
+    }
+  };
 
   useEffect(() => {
     const filtered = attendanceRecords.filter(record => {
@@ -128,6 +307,11 @@ const EmployeeAttendance = () => {
   };
 
   const downloadAttendanceReport = () => {
+    if (filteredRecords.length === 0) {
+      toast.error("No records to export");
+      return;
+    }
+
     const csvContent = [
       ['Date', 'Status', 'Punch In', 'Punch Out', 'Work Mode', 'Total Hours', 'Department', 'Designation'],
       ...filteredRecords.map(record => [
@@ -174,7 +358,48 @@ const EmployeeAttendance = () => {
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Notification Popup */}
+      {showNotification && currentNotification && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm w-full ${getNotificationDetails(currentNotification.type).color} border-l-4`}
+        >
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="ml-3 w-0 flex-1 pt-0.5">
+              <p className="text-sm font-medium">
+                {getNotificationDetails(currentNotification.type).title}
+              </p>
+              <p className="mt-1 text-sm">
+                {getNotificationDetails(currentNotification.type).description
+                  .replace('{date}', new Date(currentNotification.date).toLocaleDateString())
+                  .replace('{changedBy}', currentNotification.changedBy)}
+              </p>
+              <p className="mt-1 text-xs text-gray-600">
+                {new Date(currentNotification.changedAt).toLocaleTimeString()}
+              </p>
+            </div>
+            <div className="ml-4 flex-shrink-0 flex">
+              <button
+                onClick={() => setShowNotification(false)}
+                className="rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -248,7 +473,7 @@ const EmployeeAttendance = () => {
       {/* Attendance Stats */}
       {loading ? (
         <div className="flex justify-center items-center h-40">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
         </div>
       ) : (
         <>
@@ -416,6 +641,12 @@ const EmployeeAttendance = () => {
                                   Marked by Admin
                                 </Badge>
                               )}
+                              {record.markedHalfDayBy && (
+                                <Badge variant="outline" className="flex items-center gap-1 text-blue-600">
+                                  <Clock className="h-3 w-3" />
+                                  Marked by Admin
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-gray-600">
                               {new Date(record.date).toLocaleDateString('en-US', { 
@@ -427,6 +658,11 @@ const EmployeeAttendance = () => {
                             {record.markedLateBy && (
                               <p className="text-xs text-yellow-600 mt-1">
                                 Marked as late by {record.markedLateBy} on {new Date(record.markedLateAt || '').toLocaleDateString()}
+                              </p>
+                            )}
+                            {record.markedHalfDayBy && (
+                              <p className="text-xs text-blue-600 mt-1">
+                                Marked as half day by {record.markedHalfDayBy} on {new Date(record.markedHalfDayAt || '').toLocaleDateString()}
                               </p>
                             )}
                           </div>

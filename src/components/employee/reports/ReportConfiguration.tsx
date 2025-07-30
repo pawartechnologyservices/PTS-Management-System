@@ -36,6 +36,7 @@ const ReportConfiguration: React.FC<ReportConfigurationProps> = ({
               <SelectItem value="leaves">My Leaves</SelectItem>
               <SelectItem value="salary">My Salary</SelectItem>
               <SelectItem value="projects">My Projects</SelectItem>
+              <SelectItem value='tasks'>My Daily Task</SelectItem>
             </SelectContent>
           </Select>
           

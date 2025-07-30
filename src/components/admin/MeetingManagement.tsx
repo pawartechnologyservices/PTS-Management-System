@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, Plus, Users, Video, Clock, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -7,25 +7,47 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
-import { toast } from '../ui/use-toast';
+import { toast } from 'react-hot-toast';
 import { ref, push, set, onValue, remove, query, orderByChild } from 'firebase/database';
 import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
+import { format } from 'date-fns';
+
+const JitsiMeeting = lazy(() => import('@jitsi/react-sdk').then(mod => ({ default: mod.JitsiMeeting })));
+
+interface Meeting {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: string;
+  type: 'common' | 'department';
+  department?: string;
+  meetingLink: string;
+  agenda?: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  createdAt: string;
+  createdBy: string;
+  employeeId?: string;
+  employeeName?: string;
+  employeeDepartment?: string;
+}
 
 const MeetingManagement = () => {
   const { user } = useAuth();
-  const [meetings, setMeetings] = useState([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editingMeeting, setEditingMeeting] = useState(null);
+  const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+  const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    date: '',
-    time: '',
-    duration: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    time: format(new Date(new Date().getTime() + 30 * 60000), 'HH:mm'),
+    duration: '30',
     type: 'common',
     department: '',
-    meetingLink: '',
     agenda: ''
   });
 
@@ -36,48 +58,33 @@ const MeetingManagement = () => {
 
     const fetchMeetings = async () => {
       try {
-        // Get all employees under the current admin
         const employeesRef = ref(database, `users/${user.id}/employees`);
         
         onValue(employeesRef, (employeesSnapshot) => {
-          const allMeetings = [];
-          const meetingPromises = [];
+          const allMeetings: Meeting[] = [];
+          const meetingPromises: Promise<void>[] = [];
 
           employeesSnapshot.forEach((employeeSnapshot) => {
             const employeeId = employeeSnapshot.key;
             const employeeData = employeeSnapshot.val();
 
-            // Get meetings for this employee
             const employeeMeetingsRef = query(
               ref(database, `users/${user.id}/employees/${employeeId}/meetings`),
               orderByChild('date')
             );
             
-            const promise = new Promise((resolve) => {
+            const promise = new Promise<void>((resolve) => {
               onValue(employeeMeetingsRef, (meetingsSnapshot) => {
                 meetingsSnapshot.forEach((meetingSnapshot) => {
-                  const meetingData = meetingSnapshot.val();
+                  const meetingData = meetingSnapshot.val() as Meeting;
                   
-                  // For admin, show all meetings
-                  if (user.role === 'admin') {
-                    allMeetings.push({
-                      id: meetingSnapshot.key,
-                      ...meetingData,
-                      employeeId,
-                      employeeName: employeeData.name,
-                      employeeDepartment: employeeData.department
-                    });
-                  } 
-                  // For employee, show all meetings (both common and department)
-                  else {
-                    allMeetings.push({
-                      id: meetingSnapshot.key,
-                      ...meetingData,
-                      employeeId,
-                      employeeName: employeeData.name,
-                      employeeDepartment: employeeData.department
-                    });
-                  }
+                  allMeetings.push({
+                    id: meetingSnapshot.key,
+                    ...meetingData,
+                    employeeId,
+                    employeeName: employeeData.name,
+                    employeeDepartment: employeeData.department
+                  });
                 });
                 resolve();
               });
@@ -87,139 +94,76 @@ const MeetingManagement = () => {
           });
 
           Promise.all(meetingPromises).then(() => {
-            // Sort meetings by date and time
             const sortedMeetings = allMeetings.sort((a, b) => {
-              const dateA = new Date(`${a.date} ${a.time}`);
-              const dateB = new Date(`${b.date} ${b.time}`);
+              const dateA = new Date(`${a.date} ${a.time}`).getTime();
+              const dateB = new Date(`${b.date} ${b.time}`).getTime();
               return dateA - dateB;
             });
 
-            // Remove duplicates (meetings might appear in multiple employees)
-            const uniqueMeetings = [];
-            const meetingIds = new Set();
-            
-            sortedMeetings.forEach(meeting => {
-              if (!meetingIds.has(meeting.id)) {
-                meetingIds.add(meeting.id);
-                uniqueMeetings.push(meeting);
-              }
-            });
-
+            const uniqueMeetings = Array.from(new Map(sortedMeetings.map(m => [m.id, m])).values());
             setMeetings(uniqueMeetings);
           });
         });
       } catch (error) {
         console.error('Error fetching meetings:', error);
-        toast({
-          variant: 'destructive',
-          title: "Error",
-          description: "Failed to load meetings"
-        });
+        toast.error('Failed to load meetings');
       }
     };
 
     fetchMeetings();
   }, [user]);
 
-  const handleSubmit = async (e) => {
+  const generateMeetingLink = (meetingId: string) => {
+    return `hrms-meeting-${meetingId}`;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     try {
-      const meetingData = {
+      const meetingId = editingMeeting?.id || push(ref(database, 'meetingIds')).key;
+      if (!meetingId) throw new Error('Failed to generate meeting ID');
+
+      const meetingLink = generateMeetingLink(meetingId);
+      
+      const meetingData: Meeting = {
         title: formData.title,
         description: formData.description,
         date: formData.date,
         time: formData.time,
         duration: formData.duration,
-        meetingLink: formData.meetingLink,
+        meetingLink,
         agenda: formData.agenda,
         createdBy: user.id,
         createdAt: new Date().toISOString(),
         status: 'scheduled',
-        type: formData.type,
+        type: formData.type as 'common' | 'department',
         department: formData.type === 'department' ? formData.department : 'common'
       };
 
-      if (editingMeeting) {
-        // Update existing meeting for all relevant employees
-        const employeesRef = ref(database, `users/${user.id}/employees`);
-        onValue(employeesRef, (employeesSnapshot) => {
-          employeesSnapshot.forEach((employeeSnapshot) => {
-            const employeeId = employeeSnapshot.key;
-            const employeeData = employeeSnapshot.val();
-            
-            // For common meetings, update for all employees
-            if (formData.type === 'common') {
-              const employeeMeetingRef = ref(database, 
-                `users/${user.id}/employees/${employeeId}/meetings/${editingMeeting.id}`
-              );
-              set(employeeMeetingRef, {
-                ...meetingData,
-                lastUpdated: new Date().toISOString()
-              });
-            } 
-            // For department meetings, update only for that department
-            else if (employeeData.department === formData.department) {
-              const employeeMeetingRef = ref(database, 
-                `users/${user.id}/employees/${employeeId}/meetings/${editingMeeting.id}`
-              );
-              set(employeeMeetingRef, {
-                ...meetingData,
-                lastUpdated: new Date().toISOString()
-              });
-            }
-          });
+      const employeesRef = ref(database, `users/${user.id}/employees`);
+      onValue(employeesRef, (employeesSnapshot) => {
+        employeesSnapshot.forEach((employeeSnapshot) => {
+          const employeeId = employeeSnapshot.key;
+          const employeeData = employeeSnapshot.val();
+          
+          if (formData.type === 'common' || employeeData.department === formData.department) {
+            const employeeMeetingRef = ref(database, 
+              `users/${user.id}/employees/${employeeId}/meetings/${meetingId}`
+            );
+            set(employeeMeetingRef, meetingData);
+          }
         });
+      });
 
-        toast({
-          title: "Meeting Updated",
-          description: "Meeting has been updated successfully"
-        });
-      } else {
-        // Create new meeting ID
-        const newMeetingId = push(ref(database, 'meetingIds')).key;
-
-        // Store meeting for all relevant employees
-        const employeesRef = ref(database, `users/${user.id}/employees`);
-        onValue(employeesRef, (employeesSnapshot) => {
-          employeesSnapshot.forEach((employeeSnapshot) => {
-            const employeeId = employeeSnapshot.key;
-            const employeeData = employeeSnapshot.val();
-            
-            // For common meetings, add to all employees
-            if (formData.type === 'common') {
-              const employeeMeetingRef = ref(database, 
-                `users/${user.id}/employees/${employeeId}/meetings/${newMeetingId}`
-              );
-              set(employeeMeetingRef, meetingData);
-            } 
-            // For department meetings, add only to employees in that department
-            else if (employeeData.department === formData.department) {
-              const employeeMeetingRef = ref(database, 
-                `users/${user.id}/employees/${employeeId}/meetings/${newMeetingId}`
-              );
-              set(employeeMeetingRef, meetingData);
-            }
-          });
-        });
-
-        toast({
-          title: "Meeting Scheduled",
-          description: "Meeting has been scheduled successfully"
-        });
-      }
-
+      toast.success(editingMeeting ? 'Meeting updated successfully' : 'Meeting scheduled successfully');
       resetForm();
       setShowAddForm(false);
       setEditingMeeting(null);
     } catch (error) {
       console.error('Error saving meeting:', error);
-      toast({
-        variant: 'destructive',
-        title: "Error",
-        description: "Failed to save meeting"
-      });
+      toast.error('Failed to save meeting');
     }
   };
 
@@ -227,17 +171,16 @@ const MeetingManagement = () => {
     setFormData({
       title: '',
       description: '',
-      date: '',
-      time: '',
-      duration: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      time: format(new Date(new Date().getTime() + 30 * 60000), 'HH:mm'),
+      duration: '30',
       type: 'common',
       department: '',
-      meetingLink: '',
       agenda: ''
     });
   };
 
-  const editMeeting = (meeting) => {
+  const editMeeting = (meeting: Meeting) => {
     setEditingMeeting(meeting);
     setFormData({
       title: meeting.title,
@@ -247,17 +190,16 @@ const MeetingManagement = () => {
       duration: meeting.duration,
       type: meeting.type,
       department: meeting.department || '',
-      meetingLink: meeting.meetingLink || '',
       agenda: meeting.agenda || ''
     });
     setShowAddForm(true);
   };
 
-  const deleteMeeting = async (meeting) => {
+  const deleteMeeting = async (meeting: Meeting) => {
     if (!window.confirm('Are you sure you want to delete this meeting?')) return;
+    if (!user) return;
 
     try {
-      // Remove meeting from all employees
       const employeesRef = ref(database, `users/${user.id}/employees`);
       onValue(employeesRef, (employeesSnapshot) => {
         employeesSnapshot.forEach((employeeSnapshot) => {
@@ -269,26 +211,72 @@ const MeetingManagement = () => {
         });
       });
 
-      toast({
-        title: "Meeting Deleted",
-        description: "Meeting has been deleted successfully"
-      });
+      toast.success('Meeting deleted successfully');
     } catch (error) {
       console.error('Error deleting meeting:', error);
-      toast({
-        variant: 'destructive',
-        title: "Error",
-        description: "Failed to delete meeting"
-      });
+      toast.error('Failed to delete meeting');
     }
   };
 
-  const getTypeColor = (type) => {
+  const startMeeting = (meeting: Meeting) => {
+    setActiveMeeting(meeting);
+  };
+
+  const handleJitsiClose = () => {
+    setActiveMeeting(null);
+  };
+
+  const getTypeColor = (type: string) => {
     return type === 'common' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
+  };
+
+  const isMeetingActive = (meeting: Meeting) => {
+    const now = new Date();
+    const meetingDate = new Date(`${meeting.date}T${meeting.time}`);
+    const meetingEnd = new Date(meetingDate.getTime() + parseInt(meeting.duration) * 60000);
+    return now >= meetingDate && now <= meetingEnd;
   };
 
   return (
     <div className="space-y-6">
+      {activeMeeting && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-6xl h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">{activeMeeting.title}</h3>
+              <Button variant="outline" onClick={handleJitsiClose}>
+                Close Meeting
+              </Button>
+            </div>
+            <div className="h-[calc(90vh-60px)]">
+              <Suspense fallback={<div className="flex items-center justify-center h-full">Loading meeting...</div>}>
+                <JitsiMeeting
+                  roomName={`hrms-meeting-${activeMeeting.id}`}
+                  getIFrameRef={(iframeRef: HTMLIFrameElement) => {
+                    iframeRef.style.height = '100%';
+                    iframeRef.style.width = '100%';
+                  }}
+                  configOverwrite={{
+                    startWithAudioMuted: true,
+                    startWithVideoMuted: true,
+                    enableWelcomePage: false,
+                    disableModeratorIndicator: true,
+                    enableNoisyMicDetection: false,
+                    enableClosePage: false,
+                  }}
+                  interfaceConfigOverwrite={{
+                    DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+                    SHOW_CHROME_EXTENSION_BANNER: false,
+                    MOBILE_APP_PROMO: false,
+                    HIDE_INVITE_MORE_HEADER: true,
+                  }}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -298,12 +286,10 @@ const MeetingManagement = () => {
           <h1 className="text-2xl font-bold text-gray-800">Meeting Management</h1>
           <p className="text-gray-600">Schedule and manage company meetings</p>
         </div>
-        {user?.role === 'admin' && (
-          <Button onClick={() => setShowAddForm(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Schedule Meeting
-          </Button>
-        )}
+        <Button onClick={() => setShowAddForm(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Schedule Meeting
+        </Button>
       </motion.div>
 
       {showAddForm && (
@@ -329,7 +315,11 @@ const MeetingManagement = () => {
                   />
                   <Select 
                     value={formData.type} 
-                    onValueChange={(value) => setFormData({...formData, type: value, department: value === 'common' ? '' : formData.department})}
+                    onValueChange={(value) => setFormData({
+                      ...formData, 
+                      type: value as 'common' | 'department',
+                      department: value === 'common' ? '' : formData.department
+                    })}
                     required
                   >
                     <SelectTrigger>
@@ -371,6 +361,7 @@ const MeetingManagement = () => {
                     type="date"
                     value={formData.date}
                     onChange={(e) => setFormData({...formData, date: e.target.value})}
+                    min={format(new Date(), 'yyyy-MM-dd')}
                     required
                   />
                   <Input
@@ -388,12 +379,6 @@ const MeetingManagement = () => {
                     min="1"
                   />
                 </div>
-
-                <Input
-                  placeholder="Meeting Link (optional)"
-                  value={formData.meetingLink}
-                  onChange={(e) => setFormData({...formData, meetingLink: e.target.value})}
-                />
 
                 <Textarea
                   placeholder="Meeting Agenda (optional)"
@@ -437,52 +422,67 @@ const MeetingManagement = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {meetings.map((meeting, index) => (
-                <motion.div
-                  key={`${meeting.id}-${index}`}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="border rounded-lg p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold">{meeting.title}</h3>
-                        <Badge className={getTypeColor(meeting.type)}>
-                          {meeting.type === 'common' ? 'Common' : meeting.department}
-                        </Badge>
-                        {user?.role === 'admin' && meeting.employeeDepartment && (
-                          <span className="text-sm text-gray-500">(Department: {meeting.employeeDepartment})</span>
-                        )}
-                      </div>
-                      <p className="text-gray-600 mb-2">{meeting.description}</p>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(meeting.date).toLocaleDateString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {meeting.time} ({meeting.duration}min)
-                        </span>
-                        {meeting.meetingLink && (
-                          <span className="flex items-center gap-1">
-                            <Video className="h-3 w-3" />
-                            Online
-                          </span>
-                        )}
-                      </div>
-                      {meeting.agenda && (
-                        <div className="mt-2">
-                          <p className="text-sm font-medium">Agenda:</p>
-                          <p className="text-sm text-gray-600">{meeting.agenda}</p>
+              {meetings.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No meetings scheduled
+                </div>
+              ) : (
+                meetings.map((meeting) => {
+                  const meetingDate = new Date(`${meeting.date}T${meeting.time}`);
+                  const isActive = isMeetingActive(meeting);
+                  const isPast = new Date() > new Date(meetingDate.getTime() + parseInt(meeting.duration) * 60000);
+
+                  return (
+                    <motion.div
+                      key={meeting.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                        isActive ? 'border-blue-500 bg-blue-50' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="font-semibold">{meeting.title}</h3>
+                            <Badge className={getTypeColor(meeting.type)}>
+                              {meeting.type === 'common' ? 'Common' : meeting.department}
+                            </Badge>
+                            {isActive && (
+                              <Badge className="bg-green-100 text-green-700">Live Now</Badge>
+                            )}
+                            {isPast && (
+                              <Badge variant="outline">Completed</Badge>
+                            )}
+                          </div>
+                          <p className="text-gray-600 mb-2">{meeting.description}</p>
+                          <div className="flex items-center gap-4 text-sm text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {meetingDate.toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                year: 'numeric', 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {meeting.time} ({meeting.duration}min)
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Video className="h-3 w-3" />
+                              {meeting.meetingLink ? 'Online' : 'In-Person'}
+                            </span>
+                          </div>
+                          {meeting.agenda && (
+                            <div className="mt-2">
+                              <p className="text-sm font-medium">Agenda:</p>
+                              <p className="text-sm text-gray-600">{meeting.agenda}</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      {user?.role === 'admin' && (
-                        <>
+                        <div className="flex gap-2">
                           <Button
                             size="sm"
                             variant="outline"
@@ -500,23 +500,20 @@ const MeetingManagement = () => {
                             <Trash2 className="h-3 w-3 mr-1" />
                             Delete
                           </Button>
-                        </>
-                      )}
-                      {meeting.meetingLink && (
-                        <Button size="sm" variant="outline" asChild>
-                          <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer">
-                            Join
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-              {meetings.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  No meetings scheduled
-                </div>
+                          {meeting.meetingLink && (isActive || user?.role === 'admin') && (
+                            <Button 
+                              size="sm" 
+                              onClick={() => startMeeting(meeting)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              {isActive ? 'Join' : 'Start'} Meeting
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })
               )}
             </div>
           </CardContent>

@@ -65,7 +65,7 @@ const EmployeeManagement = () => {
       </motion.div>
 
       {/* Filters */}
-      <motion.div
+      {/* <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
@@ -79,7 +79,7 @@ const EmployeeManagement = () => {
           setFilterStatus={setFilterStatus}
           departments={departments}
         />
-      </motion.div>
+      </motion.div> */}
 
       {/* Employee List */}
       <motion.div
