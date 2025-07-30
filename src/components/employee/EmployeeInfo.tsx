@@ -223,11 +223,11 @@ const EmployeeInfo = () => {
                 <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
                   {employeeData.name.split(' ').map(n => n[0]).join('')}
                 </div>
-                <Badge 
+                {/* <Badge 
                   className={`absolute -bottom-2 -right-2 ${employeeData.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
                 >
                   {employeeData.isActive ? 'Active' : 'Inactive'}
-                </Badge>
+                </Badge> */}
               </div>
               <div className="flex-1 text-center md:text-left">
                 <h2 className="text-2xl font-bold text-gray-800">{employeeData.name}</h2>

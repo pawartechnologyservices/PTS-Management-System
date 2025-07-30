@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle, Clock3 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -23,6 +23,8 @@ interface AttendanceRecord {
   totalHours?: string;
   markedLateBy?: string;
   markedLateAt?: string;
+  markedHalfDayBy?: string;
+  markedHalfDayAt?: string;
   department?: string;
   designation?: string;
 }
@@ -129,7 +131,7 @@ const EmployeeAttendance = () => {
 
   const downloadAttendanceReport = () => {
     const csvContent = [
-      ['Date', 'Status', 'Punch In', 'Punch Out', 'Work Mode', 'Total Hours', 'Department', 'Designation'],
+      ['Date', 'Status', 'Punch In', 'Punch Out', 'Work Mode', 'Total Hours', 'Department', 'Designation', 'Marked Late By', 'Marked Late At', 'Marked Half Day By', 'Marked Half Day At'],
       ...filteredRecords.map(record => [
         new Date(record.date).toLocaleDateString(),
         record.status.charAt(0).toUpperCase() + record.status.slice(1),
@@ -138,7 +140,11 @@ const EmployeeAttendance = () => {
         record.workMode || 'office',
         record.totalHours || '-',
         record.department || user?.department || '-',
-        record.designation || user?.designation || '-'
+        record.designation || user?.designation || '-',
+        record.markedLateBy || '-',
+        record.markedLateAt || '-',
+        record.markedHalfDayBy || '-',
+        record.markedHalfDayAt || '-'
       ])
     ].map(row => row.join(',')).join('\n');
 
@@ -166,6 +172,7 @@ const EmployeeAttendance = () => {
       case 'present': return <CheckCircle className="h-4 w-4" />;
       case 'absent': return <XCircle className="h-4 w-4" />;
       case 'late': return <AlertTriangle className="h-4 w-4" />;
+      case 'half-day': return <Clock3 className="h-4 w-4" />;
       default: return <Clock className="h-4 w-4" />;
     }
   };
@@ -342,7 +349,7 @@ const EmployeeAttendance = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-full bg-blue-100 text-blue-600">
-                      <Clock className="h-5 w-5" />
+                      <Clock3 className="h-5 w-5" />
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Half Days</p>
@@ -416,6 +423,12 @@ const EmployeeAttendance = () => {
                                   Marked by Admin
                                 </Badge>
                               )}
+                              {record.markedHalfDayBy && (
+                                <Badge variant="outline" className="flex items-center gap-1 text-blue-600">
+                                  <Clock3 className="h-3 w-3" />
+                                  Marked as Half Day
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-gray-600">
                               {new Date(record.date).toLocaleDateString('en-US', { 
@@ -427,6 +440,11 @@ const EmployeeAttendance = () => {
                             {record.markedLateBy && (
                               <p className="text-xs text-yellow-600 mt-1">
                                 Marked as late by {record.markedLateBy} on {new Date(record.markedLateAt || '').toLocaleDateString()}
+                              </p>
+                            )}
+                            {record.markedHalfDayBy && (
+                              <p className="text-xs text-blue-600 mt-1">
+                                Marked as half day by {record.markedHalfDayBy} on {new Date(record.markedHalfDayAt || '').toLocaleDateString()}
                               </p>
                             )}
                           </div>

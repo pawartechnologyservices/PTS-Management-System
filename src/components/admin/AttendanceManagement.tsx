@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Clock3 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -39,6 +39,8 @@ interface AttendanceRecord {
   timestamp: number;
   markedLateBy?: string;
   markedLateAt?: string;
+  markedHalfDayBy?: string;
+  markedHalfDayAt?: string;
   breaks?: {
     [key: string]: BreakRecord;
   };
@@ -201,6 +203,40 @@ const AttendanceManagement = () => {
     }
   };
 
+  const markAsHalfDay = async (recordId: string, employeeId: string) => {
+    if (!user?.id) {
+      toast({
+        title: "Error",
+        description: "User not authenticated",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const recordRef = ref(database, `users/${user.id}/employees/${employeeId}/punching/${recordId}`);
+      
+      await update(recordRef, {
+        status: 'half-day',
+        markedHalfDayBy: user.name || 'admin',
+        markedHalfDayAt: new Date().toISOString()
+      });
+
+      toast({
+        title: "Success",
+        description: "Employee marked as half day successfully",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error marking as half day:", error);
+      toast({
+        title: "Error",
+        description: "Failed to mark as half day",
+        variant: "destructive",
+      });
+    }
+  };
+
   const deleteAttendanceRecord = async (recordId: string, employeeId: string) => {
     if (!window.confirm('Are you sure you want to delete this attendance record?')) return;
 
@@ -237,6 +273,7 @@ const AttendanceManagement = () => {
       case 'present': return 'bg-green-100 text-green-700';
       case 'absent': return 'bg-red-100 text-red-700';
       case 'late': return 'bg-yellow-100 text-yellow-700';
+      case 'half-day': return 'bg-blue-100 text-blue-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -320,6 +357,8 @@ const AttendanceManagement = () => {
         'Work Mode',
         'Marked Late By',
         'Marked Late At',
+        'Marked Half Day By',
+        'Marked Half Day At',
         'Breaks'
       ];
 
@@ -335,6 +374,8 @@ const AttendanceManagement = () => {
         record.workMode || 'office',
         record.markedLateBy || '-',
         record.markedLateAt ? new Date(record.markedLateAt).toLocaleString() : '-',
+        record.markedHalfDayBy || '-',
+        record.markedHalfDayAt ? new Date(record.markedHalfDayAt).toLocaleString() : '-',
         record.breaks ? Object.entries(record.breaks).map(([breakId, breakData]) => 
           `Break ${breakId}: ${breakData.breakIn} to ${breakData.breakOut || 'ongoing'} (${breakData.duration || 'N/A'})`
           .join('; ') ): 'No breaks'
@@ -465,6 +506,7 @@ const AttendanceManagement = () => {
                       <SelectItem value="present">Present</SelectItem>
                       <SelectItem value="absent">Absent</SelectItem>
                       <SelectItem value="late">Late</SelectItem>
+                      <SelectItem value="half-day">Half Day</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button 
@@ -569,6 +611,11 @@ const AttendanceManagement = () => {
                                 Marked by {record.markedLateBy}
                               </p>
                             )}
+                            {record.markedHalfDayBy && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Marked half day by {record.markedHalfDayBy}
+                              </p>
+                            )}
                           </td>
                           <td className="p-3">
                             <Badge variant="outline">
@@ -577,16 +624,27 @@ const AttendanceManagement = () => {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-1">
-                              {record.status !== 'late' && record.status !== 'absent' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => markAsLate(record.id, record.employeeId)}
-                                  className="text-yellow-600 hover:text-yellow-700"
-                                >
-                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                  Mark Late
-                                </Button>
+                              {record.status !== 'late' && record.status !== 'absent' && record.status !== 'half-day' && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => markAsLate(record.id, record.employeeId)}
+                                    className="text-yellow-600 hover:text-yellow-700"
+                                  >
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Mark Late
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => markAsHalfDay(record.id, record.employeeId)}
+                                    className="text-blue-600 hover:text-blue-700"
+                                  >
+                                    <Clock3 className="h-3 w-3 mr-1" />
+                                    Half Day
+                                  </Button>
+                                </>
                               )}
                               <Button
                                 size="sm"
