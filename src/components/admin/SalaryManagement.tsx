@@ -26,7 +26,7 @@ interface Employee {
   isActive: boolean;
   createdAt: string;
   profileImage?: string;
-  salary?: number; // Actual salary from the database
+  salary?: number;
   workMode?: string;
   employmentType?: string;
 }
@@ -100,7 +100,7 @@ const SalaryManagement: React.FC = () => {
           isActive: employee.status === 'active',
           createdAt: employee.createdAt,
           profileImage: employee.profileImage,
-          salary: employee.salary, // Actual salary from the database
+          salary: employee.salary,
           workMode: employee.workMode || 'office',
           employmentType: employee.employmentType || 'full-time'
         });
@@ -171,17 +171,34 @@ const SalaryManagement: React.FC = () => {
     }).format(amount);
   };
 
+  // Function to get the latest basic salary for an employee
+  const getEmployeeBasicSalary = (employeeId: string): number => {
+    const employeeSlips = salarySlips
+      .filter(slip => slip.employeeId === employeeId)
+      .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+      });
+
+    if (employeeSlips.length > 0) {
+      return employeeSlips[0].basicSalary;
+    }
+
+    // Fallback to employee's salary if no slips exist
+    const employee = employees.find(e => e.employeeId === employeeId);
+    return employee?.salary || 0;
+  };
+
   const generateSalarySlip = async (employee: Employee) => {
     if (!user) return;
 
     try {
-      // Use the actual salary from the employee data
-      const basicSalary = employee.salary || 0;
+      // Use the latest basic salary or fallback to employee's salary
+      const basicSalary = getEmployeeBasicSalary(employee.employeeId) || employee.salary || 0;
       const allowances = basicSalary * 0.3;
       const deductions = basicSalary * 0.12;
       const netSalary = basicSalary + allowances - deductions;
 
-      // Generate a new salary slip ID
       const newSlipRef = push(ref(database, `users/${user.id}/salaries`));
       const newSlipId = newSlipRef.key;
 
@@ -200,10 +217,7 @@ const SalaryManagement: React.FC = () => {
         status: 'generated'
       };
 
-      // Save to admin's salary list
       await set(newSlipRef, salarySlip);
-      
-      // Save to employee's salary record under the specified path
       await set(ref(database, `users/${user.id}/employees/${employee.id}/salary/${newSlipId}`), salarySlip);
 
       toast({
@@ -226,7 +240,6 @@ const SalaryManagement: React.FC = () => {
     if (!user) return;
 
     try {
-      // Find the employee to get their ID
       const employee = employees.find(e => e.employeeId === slip.employeeId);
       if (!employee) {
         throw new Error('Employee not found');
@@ -235,11 +248,8 @@ const SalaryManagement: React.FC = () => {
       const updates: Record<string, any> = {};
       const sentAt = new Date().toISOString();
       
-      // Update in admin's salary list
       updates[`users/${user.id}/salaries/${slip.id}/status`] = 'sent';
       updates[`users/${user.id}/salaries/${slip.id}/sentAt`] = sentAt;
-      
-      // Update in employee's salary record under the specified path
       updates[`users/${user.id}/employees/${employee.id}/salary/${slip.id}/status`] = 'sent';
       updates[`users/${user.id}/employees/${employee.id}/salary/${slip.id}/sentAt`] = sentAt;
 
@@ -353,17 +363,14 @@ const SalaryManagement: React.FC = () => {
       
       const updates: Record<string, any> = {};
       
-      // Update in admin's salary list
       updates[`users/${user.id}/salaries/${editingSlip.id}/basicSalary`] = editData.basicSalary;
       updates[`users/${user.id}/salaries/${editingSlip.id}/allowances`] = editData.allowances;
       updates[`users/${user.id}/salaries/${editingSlip.id}/deductions`] = editData.deductions;
       updates[`users/${user.id}/salaries/${editingSlip.id}/netSalary`] = netSalary;
       updates[`users/${user.id}/salaries/${editingSlip.id}/lastUpdated`] = new Date().toISOString();
       
-      // Find the employee to get their ID
       const employee = employees.find(e => e.employeeId === editingSlip.employeeId);
       if (employee) {
-        // Update in employee's salary record under the specified path
         updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/basicSalary`] = editData.basicSalary;
         updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/allowances`] = editData.allowances;
         updates[`users/${user.id}/employees/${employee.id}/salary/${editingSlip.id}/deductions`] = editData.deductions;
@@ -395,19 +402,15 @@ const SalaryManagement: React.FC = () => {
     if (!user || !window.confirm('Are you sure you want to delete this salary slip?')) return;
     
     try {
-      // Find the slip to get employee ID
       const slip = salarySlips.find(s => s.id === slipId);
       if (!slip) return;
 
       const updates: Record<string, null> = {};
       
-      // Delete from admin's salary list
       updates[`users/${user.id}/salaries/${slipId}`] = null;
       
-      // Find the employee to get their ID
       const employee = employees.find(e => e.employeeId === slip.employeeId);
       if (employee) {
-        // Delete from employee's salary record under the specified path
         updates[`users/${user.id}/employees/${employee.id}/salary/${slipId}`] = null;
       }
 
@@ -546,6 +549,7 @@ const SalaryManagement: React.FC = () => {
                 <div className="space-y-4">
                   {employees.map((employee, index) => {
                     const hasSlip = currentMonthSlips.some(slip => slip.employeeId === employee.employeeId);
+                    const basicSalary = getEmployeeBasicSalary(employee.employeeId);
                     
                     return (
                       <motion.div
@@ -561,7 +565,7 @@ const SalaryManagement: React.FC = () => {
                             {hasSlip && <Badge className="bg-green-100 text-green-700">Generated</Badge>}
                           </div>
                           <p className="text-sm text-gray-600">{employee.employeeId} • {employee.designation}</p>
-                          <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(employee.salary || 0)}</p>
+                          <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(basicSalary)}</p>
                           <p className="text-xs text-gray-500">
                             Work Mode: {employee.workMode} • {employee.employmentType}
                           </p>
@@ -605,7 +609,7 @@ const SalaryManagement: React.FC = () => {
                                     id="employee-salary"
                                     type="number"
                                     value={employeeEditData.salary}
-                                    onChange={(e) => setEmployeeEditData({...employeeEditData, salary: parseInt(e.target.value)})}
+                                    onChange={(e) => setEmployeeEditData({...employeeEditData, salary: parseInt(e.target.value) || 0})}
                                   />
                                 </div>
                                 <div>
@@ -738,7 +742,7 @@ const SalaryManagement: React.FC = () => {
                                   id="basic-salary"
                                   type="number"
                                   value={editData.basicSalary}
-                                  onChange={(e) => setEditData({...editData, basicSalary: parseInt(e.target.value)})}
+                                  onChange={(e) => setEditData({...editData, basicSalary: parseInt(e.target.value) || 0})}
                                 />
                               </div>
                               <div>
@@ -747,7 +751,7 @@ const SalaryManagement: React.FC = () => {
                                   id="allowances"
                                   type="number"
                                   value={editData.allowances}
-                                  onChange={(e) => setEditData({...editData, allowances: parseInt(e.target.value)})}
+                                  onChange={(e) => setEditData({...editData, allowances: parseInt(e.target.value) || 0})}
                                 />
                               </div>
                               <div>
@@ -756,7 +760,7 @@ const SalaryManagement: React.FC = () => {
                                   id="deductions"
                                   type="number"
                                   value={editData.deductions}
-                                  onChange={(e) => setEditData({...editData, deductions: parseInt(e.target.value)})}
+                                  onChange={(e) => setEditData({...editData, deductions: parseInt(e.target.value) || 0})}
                                 />
                               </div>
                               <div className="flex gap-2 pt-2">

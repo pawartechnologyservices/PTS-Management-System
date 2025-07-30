@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3 } from 'lucide-react';
@@ -10,6 +9,7 @@ import AttendanceReportSummary from './reports/AttendanceReportSummary';
 import SalaryReportSummary from './reports/SalaryReportSummary';
 import ProjectsReportSummary from './reports/ProjectsReportSummary';
 import LeaveReportSummary from './reports/LeaveReportSummary';
+import DailyTask from './reports/DailyTask';
 
 const EmployeeReports = () => {
   const { user } = useAuth();
@@ -34,8 +34,10 @@ const EmployeeReports = () => {
         return <SalaryReportSummary reportData={reportData} />;
       case 'projects':
         return <ProjectsReportSummary reportData={reportData} />;
-        case 'leaves':
+      case 'leaves':
         return <LeaveReportSummary reportData={reportData} />;
+      case 'tasks':
+        return <DailyTask />;
       default:
         return null;
     }
@@ -66,6 +68,7 @@ const EmployeeReports = () => {
           onReportTypeChange={setReportType}
           onDateRangeChange={setDateRange}
           onExportReport={handleExportReport}
+          showTasksOption={true}
         />
       </motion.div>
 
@@ -79,7 +82,8 @@ const EmployeeReports = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
-              {reportType.charAt(0).toUpperCase() + reportType.slice(1)} Summary
+              {reportType === 'tasks' ? 'Daily Tasks' : 
+               reportType.charAt(0).toUpperCase() + reportType.slice(1) + ' Summary'}
             </CardTitle>
           </CardHeader>
           <CardContent>

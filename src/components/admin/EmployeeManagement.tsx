@@ -64,6 +64,26 @@ const EmployeeManagement = () => {
         </div>
       </motion.div>
 
+<<<<<<< HEAD
+=======
+      {/* Filters */}
+      {/* <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <EmployeeFilters
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          filterDepartment={filterDepartment}
+          setFilterDepartment={setFilterDepartment}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          departments={departments}
+        />
+      </motion.div> */}
+
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
       {/* Employee List */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}

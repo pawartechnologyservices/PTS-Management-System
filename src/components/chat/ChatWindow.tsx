@@ -4,8 +4,7 @@ import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../ui/button';
 import { motion } from 'framer-motion';
-import { ImagePlus, Video, Paperclip, X, MessageCircle, MoreVertical, Trash2 } from 'lucide-react';
-import MediaGallery from './MediaGallery';
+import { ImagePlus, Video, Paperclip, X, MessageCircle, MoreVertical, Edit, Trash2, FileText, Link, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 interface Message {
@@ -13,10 +12,12 @@ interface Message {
   senderId: string;
   receiverId: string;
   content: string;
-  type: string;
+  type: string; // 'text' | 'image' | 'video' | 'document' | 'link'
   timestamp: number;
   status: string;
   mediaUrl?: string;
+  fileName?: string;
+  fileSize?: number;
   deletedForSender?: boolean;
   deletedForReceiver?: boolean;
   deletedForEveryone?: boolean;
@@ -31,6 +32,12 @@ interface ChatWindowProps {
     profileImage?: string;
   } | null;
   onMessageSent?: () => void;
+}
+
+interface MediaGalleryProps {
+  messages: Message[];
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 function getChatId(userId1: string, userId2: string): string {
@@ -53,13 +60,143 @@ function formatLastSeen(timestamp: number): string {
   return `${days} day${days > 1 ? 's' : ''} ago`;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function isLink(text: string): boolean {
+  const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+  return urlPattern.test(text);
+}
+
+const MediaGallery: React.FC<MediaGalleryProps> = ({ messages, isOpen, onClose }) => {
+  const mediaItems = messages.filter(
+    (msg) => (msg.type === 'image' || msg.type === 'video') && !msg.deletedForEveryone
+  );
+  const documentItems = messages.filter(
+    (msg) => msg.type === 'document' && !msg.deletedForEveryone
+  );
+
+  const downloadFile = (url: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="p-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-semibold">Media Gallery</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4">
+          {/* Media Section */}
+          <div className="mb-8">
+            <h3 className="text-lg font-medium mb-4 flex items-center">
+              <ImagePlus className="h-5 w-5 mr-2" />
+              Photos & Videos ({mediaItems.length})
+            </h3>
+            {mediaItems.length === 0 ? (
+              <p className="text-gray-500">No photos or videos shared yet</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {mediaItems.map((item) => (
+                  <div key={item.id} className="relative group">
+                    {item.type === 'image' ? (
+                      <img
+                        src={item.mediaUrl}
+                        alt="Shared content"
+                        className="w-full h-32 object-cover rounded-lg"
+                      />
+                    ) : (
+                      <video
+                        src={item.mediaUrl}
+                        className="w-full h-32 object-cover rounded-lg"
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 rounded-lg">
+                      <a
+                        href={item.mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-white p-2 hover:bg-white hover:bg-opacity-20 rounded-full"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Documents Section */}
+          <div>
+            <h3 className="text-lg font-medium mb-4 flex items-center">
+              <FileText className="h-5 w-5 mr-2" />
+              Documents ({documentItems.length})
+            </h3>
+            {documentItems.length === 0 ? (
+              <p className="text-gray-500">No documents shared yet</p>
+            ) : (
+              <div className="space-y-3">
+                {documentItems.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                    <div className="flex items-center">
+                      <FileText className="h-8 w-8 text-blue-500 mr-3" />
+                      <div>
+                        <p className="font-medium text-sm">{item.fileName}</p>
+                        <p className="text-xs text-gray-500">
+                          {item.fileSize ? formatFileSize(item.fileSize) : 'Unknown size'} • {new Date(item.timestamp).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => downloadFile(item.mediaUrl || '', item.fileName || 'document')}
+                      className="p-2 text-blue-500 hover:text-blue-700 rounded-full hover:bg-blue-50"
+                      title="Download"
+                    >
+                      <Download className="h-5 w-5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) => {
   const { user: currentUser } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [userStatus, setUserStatus] = useState<'online' | 'offline'>('offline');
   const [lastSeen, setLastSeen] = useState<number | null>(null);
-  const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<{ 
+    url: string; 
+    type: 'image' | 'video' | 'document';
+    file?: File;
+    fileName?: string;
+    fileSize?: number;
+  } | null>(null);
   const [isMediaGalleryOpen, setIsMediaGalleryOpen] = useState(false);
   const [userDetails, setUserDetails] = useState<{
     designation: string;
@@ -77,14 +214,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
     messageId: null,
     position: null,
   });
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(event.target as Node)) {
         setContextMenu({ messageId: null, position: null });
+      }
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
+        setAttachmentMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -140,6 +283,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
         timestamp: val.timestamp,
         status: val.status,
         mediaUrl: val.mediaUrl,
+        fileName: val.fileName,
+        fileSize: val.fileSize,
         deletedForSender: val.deletedForSender || false,
         deletedForReceiver: val.deletedForReceiver || false,
         deletedForEveryone: val.deletedForEveryone || false,
@@ -188,29 +333,67 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'media' | 'document') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/webm'];
-    const maxSize = 10 * 1024 * 1024;
+    const validMediaTypes = ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'video/webm'];
+    const validDocTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain'
+    ];
 
-    if (!validTypes.includes(file.type)) {
+    const maxSize = 25 * 1024 * 1024; // 25MB
+
+    if (file.size > maxSize) {
+      toast.error('File size too large. Maximum allowed size is 25MB.');
+      return;
+    }
+
+    if (type === 'media' && !validMediaTypes.includes(file.type)) {
       toast.error('Please select an image (JPEG, PNG, GIF) or video (MP4, WebM) file.');
       return;
     }
 
-    if (file.size > maxSize) {
-      toast.error('File size too large. Maximum allowed size is 10MB.');
+    if (type === 'document' && !validDocTypes.includes(file.type)) {
+      toast.error('Please select a valid document (PDF, Word, Excel, PowerPoint, Text)');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (file.type.startsWith('image/')) {
-        setMediaPreview({ url: event.target?.result as string, type: 'image' });
-      } else if (file.type.startsWith('video/')) {
-        setMediaPreview({ url: event.target?.result as string, type: 'video' });
+      if (type === 'media') {
+        if (file.type.startsWith('image/')) {
+          setMediaPreview({ 
+            url: event.target?.result as string, 
+            type: 'image',
+            file,
+            fileName: file.name,
+            fileSize: file.size
+          });
+        } else if (file.type.startsWith('video/')) {
+          setMediaPreview({ 
+            url: event.target?.result as string, 
+            type: 'video',
+            file,
+            fileName: file.name,
+            fileSize: file.size
+          });
+        }
+      } else {
+        setMediaPreview({ 
+          url: event.target?.result as string, 
+          type: 'document',
+          file,
+          fileName: file.name,
+          fileSize: file.size
+        });
       }
     };
     reader.onerror = () => {
@@ -221,35 +404,79 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
 
   const removeMediaPreview = () => {
     setMediaPreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (docInputRef.current) docInputRef.current.value = '';
   };
 
   const sendMessage = async () => {
     if (!currentUser || !selectedUser || isSending) return;
-    if (!newMessage.trim() && !mediaPreview) return;
+    
+    // Handle link detection
+    if (!mediaPreview && isLink(newMessage.trim())) {
+      // Send as link
+      const chatId = getChatId(currentUser.id, selectedUser.id);
+      const messagesRef = ref(database, `chats/${chatId}/messages`);
+      const newMsgRef = push(messagesRef);
+      const timestamp = Date.now();
+
+      try {
+        const messageData: Message = {
+          id: newMsgRef.key!,
+          senderId: currentUser.id,
+          receiverId: selectedUser.id,
+          content: newMessage.trim(),
+          type: 'link',
+          timestamp,
+          status: 'sent',
+        };
+
+        await set(newMsgRef, messageData);
+        setNewMessage('');
+        toast.success('Link shared');
+        
+        if (onMessageSent) {
+          onMessageSent();
+        }
+      } catch (error) {
+        console.error('Error sending message:', error);
+        toast.error('Failed to share link');
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
+
+    // Handle regular text or attachments
+    if ((!newMessage.trim() && !mediaPreview) || (editingMessage && !newMessage.trim() && !mediaPreview)) return;
 
     setIsSending(true);
     const chatId = getChatId(currentUser.id, selectedUser.id);
     const messagesRef = ref(database, `chats/${chatId}/messages`);
-    const newMsgRef = push(messagesRef);
+    const newMsgRef = editingMessage ? ref(database, `chats/${chatId}/messages/${editingMessage.id}`) : push(messagesRef);
     const timestamp = Date.now();
 
     try {
       let messageData: Message;
       
       if (mediaPreview) {
+        // In a real app, you would upload the file to storage here and get a URL
+        // For this example, we'll just use the data URL
         messageData = {
           id: newMsgRef.key!,
           senderId: currentUser.id,
           receiverId: selectedUser.id,
           content: mediaPreview.url,
           type: mediaPreview.type,
-          timestamp,
+          timestamp: editingMessage ? editingMessage.timestamp : timestamp,
           status: 'sent',
           mediaUrl: mediaPreview.url,
+          fileName: mediaPreview.fileName,
+          fileSize: mediaPreview.fileSize,
         };
+
+        if (mediaPreview.type === 'document') {
+          messageData.content = 'Document attached'; // Or could be the file name
+        }
       } else {
         messageData = {
           id: newMsgRef.key!,
@@ -257,7 +484,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
           receiverId: selectedUser.id,
           content: newMessage.trim(),
           type: 'text',
-          timestamp,
+          timestamp: editingMessage ? editingMessage.timestamp : timestamp,
           status: 'sent',
         };
       }
@@ -265,15 +492,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
       await set(newMsgRef, messageData);
       setNewMessage('');
       setMediaPreview(null);
+      setEditingMessage(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      toast.success('Message sent');
+      if (docInputRef.current) docInputRef.current.value = '';
+      toast.success(editingMessage ? 'Message updated' : 'Message sent');
       
       if (onMessageSent) {
         onMessageSent();
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      toast.error('Failed to send message');
+      toast.error(editingMessage ? 'Failed to update message' : 'Failed to send message');
     } finally {
       setIsSending(false);
     }
@@ -292,6 +521,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
       messageId: message.id,
       position: { x: e.clientX, y: e.clientY },
     });
+  };
+
+  const handleEditMessage = (message: Message) => {
+    if (message.type !== 'text') {
+      toast.error('Only text messages can be edited');
+      return;
+    }
+    setEditingMessage(message);
+    setNewMessage(message.content);
+    setContextMenu({ messageId: null, position: null });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleDeleteForMe = async (message: Message) => {
@@ -332,6 +572,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
         content: 'This message was deleted',
         type: 'text',
         mediaUrl: null,
+        fileName: null,
+        fileSize: null,
       });
       
       toast.success('Message deleted for everyone');
@@ -340,6 +582,47 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
       toast.error('Failed to delete message');
     } finally {
       setContextMenu({ messageId: null, position: null });
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setNewMessage('');
+  };
+
+  const renderMessageContent = (msg: Message) => {
+    if (msg.deletedForEveryone) {
+      return <div className="italic">This message was deleted</div>;
+    }
+
+    switch (msg.type) {
+      case 'image':
+        return <img src={msg.mediaUrl} alt="Shared content" className="max-w-full max-h-64 rounded" />;
+      case 'video':
+        return <video src={msg.mediaUrl} controls className="max-w-full max-h-64 rounded" />;
+      case 'document':
+        return (
+          <div className="flex items-center p-2 bg-white rounded border border-gray-200">
+            <FileText className="h-8 w-8 text-blue-500 mr-3" />
+            <div>
+              <p className="font-medium text-sm truncate max-w-xs">{msg.fileName}</p>
+              <p className="text-xs text-gray-500">{msg.fileSize ? formatFileSize(msg.fileSize) : 'Unknown size'}</p>
+            </div>
+          </div>
+        );
+      case 'link':
+        return (
+          <a 
+            href={msg.content.startsWith('http') ? msg.content : `https://${msg.content}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline break-all"
+          >
+            {msg.content}
+          </a>
+        );
+      default:
+        return <p className="whitespace-pre-wrap">{msg.content}</p>;
     }
   };
 
@@ -398,6 +681,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
         </div>
       </div>
 
+      {editingMessage && (
+        <div className="p-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+          <div className="text-sm text-blue-700 flex items-center">
+            <Edit className="h-4 w-4 mr-2" />
+            Editing message
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-blue-700 hover:text-blue-800"
+            onClick={cancelEdit}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -408,81 +708,49 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
             <p className="text-sm mt-1">Start the conversation with {selectedUser.name}</p>
           </div>
         ) : (
-          messages.map((msg) => {
-            if (msg.deletedForEveryone) {
-              return (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className={`flex max-w-xs ${msg.senderId === currentUser?.id ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
-                >
-                  <div className="p-3 rounded-lg bg-gray-100 text-gray-500 italic">
-                    This message was deleted
-                  </div>
-                </motion.div>
-              );
-            }
-
-            return (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className={`flex max-w-xs ${msg.senderId === currentUser?.id ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
-                onContextMenu={(e) => handleContextMenu(e, msg)}
+          messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2 }}
+              className={`flex max-w-xs ${msg.senderId === currentUser?.id ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+              onContextMenu={(e) => handleContextMenu(e, msg)}
+            >
+              <div
+                className={`relative group p-3 rounded-lg ${msg.senderId === currentUser?.id
+                  ? 'bg-blue-500 text-white rounded-br-none'
+                  : 'bg-gray-200 text-gray-900 rounded-bl-none'
+                }`}
               >
-                <div
-                  className={`relative group p-3 rounded-lg ${msg.senderId === currentUser?.id
-                    ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-gray-200 text-gray-900 rounded-bl-none'
-                  }`}
-                >
-                  {(msg.senderId === currentUser?.id || msg.receiverId === currentUser?.id) && (
-                    <button
-                      className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-700 text-white rounded-full p-1"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setContextMenu({
-                          messageId: msg.id,
-                          position: { x: e.clientX, y: e.clientY },
-                        });
-                      }}
-                    >
-                      <MoreVertical className="h-3 w-3" />
-                    </button>
+                {(msg.senderId === currentUser?.id || msg.receiverId === currentUser?.id) && (
+                  <button
+                    className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-700 text-white rounded-full p-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContextMenu({
+                        messageId: msg.id,
+                        position: { x: e.clientX, y: e.clientY },
+                      });
+                    }}
+                  >
+                    <MoreVertical className="h-3 w-3" />
+                  </button>
+                )}
+                
+                {renderMessageContent(msg)}
+                <div className={`text-xs mt-1 ${msg.senderId === currentUser?.id ? 'text-blue-100' : 'text-gray-500'}`}>
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {msg.status === 'read' && msg.senderId === currentUser?.id && (
+                    <span className="ml-1">✓✓</span>
                   )}
-                  
-                  {msg.type === 'image' ? (
-                    <img
-                      src={msg.mediaUrl || msg.content}
-                      alt="Shared image"
-                      className="max-w-full max-h-64 rounded"
-                    />
-                  ) : msg.type === 'video' ? (
-                    <video
-                      src={msg.mediaUrl || msg.content}
-                      controls
-                      className="max-w-full max-h-64 rounded"
-                    />
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.status === 'delivered' && msg.senderId === currentUser?.id && (
+                    <span className="ml-1">✓</span>
                   )}
-                  <div className={`text-xs mt-1 ${msg.senderId === currentUser?.id ? 'text-blue-100' : 'text-gray-500'}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {msg.status === 'read' && msg.senderId === currentUser?.id && (
-                      <span className="ml-1">✓✓</span>
-                    )}
-                    {msg.status === 'delivered' && msg.senderId === currentUser?.id && (
-                      <span className="ml-1">✓</span>
-                    )}
-                  </div>
                 </div>
-              </motion.div>
-            );
-          })
+              </div>
+            </motion.div>
+          ))
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -496,8 +764,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
             left: contextMenu.position.x,
           }}
         >
-          {contextMenu.messageId && messages.find(m => m.id === contextMenu.messageId)?.senderId === currentUser?.id ? (
+          {messages.find(m => m.id === contextMenu.messageId)?.senderId === currentUser?.id ? (
             <>
+              {messages.find(m => m.id === contextMenu.messageId)?.type === 'text' && (
+                <button
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center"
+                  onClick={() => {
+                    const message = messages.find(m => m.id === contextMenu.messageId);
+                    if (message) handleEditMessage(message);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </button>
+              )}
               <button
                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center"
                 onClick={() => {
@@ -551,20 +831,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
                 alt="Preview"
                 className="h-20 w-20 object-cover rounded"
               />
-            ) : (
+            ) : mediaPreview.type === 'video' ? (
               <video
                 src={mediaPreview.url}
                 className="h-20 w-20 object-cover rounded"
               />
+            ) : (
+              <div className="flex items-center">
+                <FileText className="h-10 w-10 text-blue-500 mr-3" />
+                <div>
+                  <p className="font-medium text-sm">{mediaPreview.fileName}</p>
+                  <p className="text-xs text-gray-500">{formatFileSize(mediaPreview.fileSize || 0)}</p>
+                </div>
+              </div>
             )}
-            <div className="ml-3">
-              <p className="text-sm font-medium">
-                {mediaPreview.type === 'image' ? 'Image' : 'Video'} ready to send
-              </p>
-              <p className="text-xs text-gray-500">
-                {mediaPreview.type === 'image' ? 'JPEG Image' : 'MP4 Video'}
-              </p>
-            </div>
           </div>
         </div>
       )}
@@ -576,21 +856,70 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
               variant="ghost"
               size="icon"
               className="text-gray-500 hover:text-gray-700"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setAttachmentMenuOpen(!attachmentMenuOpen)}
             >
               <Paperclip className="h-5 w-5" />
             </Button>
+            
+            {attachmentMenuOpen && (
+              <div 
+                ref={attachmentMenuRef}
+                className="absolute bottom-12 left-0 bg-white shadow-lg rounded-md border border-gray-200 py-1 w-48 z-10"
+              >
+                <button
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setAttachmentMenuOpen(false);
+                  }}
+                >
+                  <ImagePlus className="h-4 w-4 mr-2" />
+                  Photo/Video
+                </button>
+                <button
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center"
+                  onClick={() => {
+                    docInputRef.current?.click();
+                    setAttachmentMenuOpen(false);
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Document
+                </button>
+                {/* <button
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center"
+                  onClick={() => {
+                    const link = prompt('Enter a URL to share:');
+                    if (link && link.trim()) {
+                      setNewMessage(link.trim());
+                    }
+                    setAttachmentMenuOpen(false);
+                  }}
+                >
+                  <Link className="h-4 w-4 mr-2" />
+                  Share Link
+                </button> */}
+              </div>
+            )}
+
             <input
               type="file"
               ref={fileInputRef}
-              onChange={handleFileChange}
+              onChange={(e) => handleFileChange(e, 'media')}
               accept="image/*,video/*"
+              className="hidden"
+            />
+            <input
+              type="file"
+              ref={docInputRef}
+              onChange={(e) => handleFileChange(e, 'document')}
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
               className="hidden"
             />
           </div>
           <input
             type="text"
-            placeholder="Type a message..."
+            placeholder={editingMessage ? 'Edit your message...' : 'Type a message...'}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -601,7 +930,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ selectedUser, onMessageSent }) 
             className="bg-blue-500 hover:bg-blue-600 text-white rounded-full px-4 py-2"
             disabled={(!newMessage.trim() && !mediaPreview) || isSending}
           >
-            {isSending ? 'Sending...' : 'Send'}
+            {isSending ? 'Sending...' : editingMessage ? 'Update' : 'Send'}
           </Button>
         </div>
       </div>

@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+<<<<<<< HEAD
 import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Clock3 } from 'lucide-react';
+=======
+import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Sun, Bell } from 'lucide-react';
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -9,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from '../ui/use-toast';
 import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
-import { ref, onValue, query, orderByChild, update, remove } from 'firebase/database';
+import { ref, onValue, query, orderByChild, update, remove, off, limitToLast } from 'firebase/database';
 
 interface Employee {
   id: string;
@@ -46,6 +50,18 @@ interface AttendanceRecord {
   };
 }
 
+interface Notification {
+  id: string;
+  type: 'punch-in' | 'punch-out' | 'break-in' | 'break-out';
+  employeeName: string;
+  employeeId: string;
+  department?: string;
+  email?: string;
+  time: string;
+  timestamp: number;
+  read: boolean;
+}
+
 const AttendanceManagement = () => {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -56,6 +72,19 @@ const AttendanceManagement = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+  }, []);
 
   // Fetch employees data
   useEffect(() => {
@@ -88,7 +117,7 @@ const AttendanceManagement = () => {
     return () => unsubscribeEmployees();
   }, [user]);
 
-  // Fetch attendance records for all employees
+  // Setup real-time listeners for attendance changes
   useEffect(() => {
     if (!user?.id || employees.length === 0) {
       setLoading(false);
@@ -97,12 +126,16 @@ const AttendanceManagement = () => {
 
     const allRecords: AttendanceRecord[] = [];
     const unsubscribeFunctions: (() => void)[] = [];
+    const notificationUnsubscribes: (() => void)[] = [];
+    const processedPunchOuts = new Set<string>();
+    const processedBreaks = new Set<string>();
 
     employees.forEach(employee => {
+      // Listen for attendance records
       const attendanceRef = ref(database, `users/${user.id}/employees/${employee.id}/punching`);
       const attendanceQuery = query(attendanceRef, orderByChild('timestamp'));
       
-      const unsubscribe = onValue(attendanceQuery, (snapshot) => {
+      const unsubscribeAttendance = onValue(attendanceQuery, (snapshot) => {
         try {
           const data = snapshot.val();
           if (data) {
@@ -111,16 +144,13 @@ const AttendanceManagement = () => {
               employeeId: employee.id,
               employeeName: employee.name,
               ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName'>),
-              // Ensure breaks exists even if empty
               breaks: (value as any)?.breaks || {}
             }));
             
-            // Update allRecords with new data for this employee
             const existingRecords = allRecords.filter(r => r.employeeId !== employee.id);
             allRecords.splice(0, allRecords.length, ...existingRecords, ...records);
             setAttendanceRecords([...allRecords].sort((a, b) => b.timestamp - a.timestamp));
           } else {
-            // Remove records for this employee if no data exists
             const updatedRecords = allRecords.filter(r => r.employeeId !== employee.id);
             allRecords.splice(0, allRecords.length, ...updatedRecords);
             setAttendanceRecords([...allRecords]);
@@ -130,13 +160,155 @@ const AttendanceManagement = () => {
         }
       });
 
-      unsubscribeFunctions.push(unsubscribe);
+      // Listen for new punch in/out events
+      const newAttendanceRef = ref(database, `users/${user.id}/employees/${employee.id}/punching`);
+      const newAttendanceQuery = query(newAttendanceRef, orderByChild('timestamp'), limitToLast(1));
+      
+      const unsubscribeNewAttendance = onValue(newAttendanceQuery, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => ({
+              id: key,
+              employeeId: employee.id,
+              employeeName: employee.name,
+              ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName'>),
+              breaks: (value as any)?.breaks || {}
+            }));
+
+            records.forEach(record => {
+              // Check if this is a new record (timestamp within last 5 minutes)
+              if (record.timestamp > Date.now() - 300000) {
+                const recordKey = `${record.employeeId}-${record.id}`;
+                
+                if (record.punchIn && !record.punchOut) {
+                  // New punch in
+                  showSystemNotification({
+                    type: 'punch-in',
+                    employeeName: record.employeeName,
+                    employeeId: record.employeeId,
+                    department: employee.department,
+                    email: employee.email,
+                    time: record.punchIn,
+                    timestamp: record.timestamp
+                  });
+                } else if (record.punchOut && !processedPunchOuts.has(recordKey)) {
+                  // New punch out (only trigger once per record)
+                  processedPunchOuts.add(recordKey);
+                  showSystemNotification({
+                    type: 'punch-out',
+                    employeeName: record.employeeName,
+                    employeeId: record.employeeId,
+                    department: employee.department,
+                    email: employee.email,
+                    time: record.punchOut,
+                    timestamp: record.timestamp
+                  });
+                }
+              }
+            });
+          }
+        } catch (error) {
+          console.error(`Error checking new attendance for employee ${employee.id}:`, error);
+        }
+      });
+
+      // Listen for break changes
+      const breaksRef = ref(database, `users/${user.id}/employees/${employee.id}/punching`);
+      
+      const unsubscribeBreaks = onValue(breaksRef, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            Object.entries(data).forEach(([recordId, recordData]: [string, any]) => {
+              if (recordData.breaks) {
+                Object.entries(recordData.breaks).forEach(([breakId, breakData]: [string, any]) => {
+                  // Check if this break was recently added (timestamp within last 5 minutes)
+                  if (breakData.timestamp > Date.now() - 300000) {
+                    const breakKey = `${employee.id}-${recordId}-${breakId}`;
+                    
+                    if (breakData.breakIn && !breakData.breakOut && !processedBreaks.has(breakKey)) {
+                      // New break in
+                      processedBreaks.add(breakKey);
+                      showSystemNotification({
+                        type: 'break-in',
+                        employeeName: employee.name,
+                        employeeId: employee.id,
+                        department: employee.department,
+                        email: employee.email,
+                        time: breakData.breakIn,
+                        timestamp: breakData.timestamp
+                      });
+                    } else if (breakData.breakOut && !processedBreaks.has(breakKey)) {
+                      // New break out (only trigger once per break)
+                      processedBreaks.add(breakKey);
+                      showSystemNotification({
+                        type: 'break-out',
+                        employeeName: employee.name,
+                        employeeId: employee.id,
+                        department: employee.department,
+                        email: employee.email,
+                        time: breakData.breakOut,
+                        timestamp: breakData.timestamp
+                      });
+                    }
+                  }
+                });
+              }
+            });
+          }
+        } catch (error) {
+          console.error(`Error checking breaks for employee ${employee.id}:`, error);
+        }
+      });
+
+      unsubscribeFunctions.push(unsubscribeAttendance, unsubscribeNewAttendance, unsubscribeBreaks);
     });
 
     setLoading(false);
     
-    return () => unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
+    return () => {
+      unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
+      notificationUnsubscribes.forEach(unsubscribe => unsubscribe());
+    };
   }, [user, employees]);
+
+  const showSystemNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `${notification.employeeId}-${notification.timestamp}`,
+      read: false
+    };
+
+    // Add to in-app notifications
+    setNotifications(prev => [newNotification, ...prev]);
+    setCurrentNotification(newNotification);
+    setShowNotification(true);
+
+    // Show browser notification if permission is granted
+    if (notificationPermission === 'granted') {
+      const notificationDetails = getNotificationDetails(notification.type);
+      try {
+        new Notification(`${notificationDetails.title}: ${notification.employeeName}`, {
+          body: `${notificationDetails.title} at ${notification.time}` +
+                (notification.department ? ` (${notification.department})` : ''),
+          icon: '/logo.png', // Replace with your app's icon
+          tag: `attendance-${notification.type}-${notification.timestamp}`
+        });
+      } catch (error) {
+        console.error('Error showing system notification:', error);
+      }
+    }
+
+    // Auto-hide after 5 seconds
+    const timeoutId = setTimeout(() => {
+      setShowNotification(false);
+      // Delay clearing current notification to allow animation to complete
+      setTimeout(() => setCurrentNotification(null), 500);
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  };
 
   // Apply filters to attendance records
   useEffect(() => {
@@ -185,7 +357,9 @@ const AttendanceManagement = () => {
       await update(recordRef, {
         status: 'late',
         markedLateBy: user.name || 'admin',
-        markedLateAt: new Date().toISOString()
+        markedLateAt: new Date().toISOString(),
+        markedHalfDayBy: null,
+        markedHalfDayAt: null
       });
 
       toast({
@@ -219,7 +393,13 @@ const AttendanceManagement = () => {
       await update(recordRef, {
         status: 'half-day',
         markedHalfDayBy: user.name || 'admin',
+<<<<<<< HEAD
         markedHalfDayAt: new Date().toISOString()
+=======
+        markedHalfDayAt: new Date().toISOString(),
+        markedLateBy: null,
+        markedLateAt: null
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
       });
 
       toast({
@@ -237,6 +417,45 @@ const AttendanceManagement = () => {
     }
   };
 
+<<<<<<< HEAD
+=======
+  const resetStatus = async (recordId: string, employeeId: string) => {
+    if (!user?.id) {
+      toast({
+        title: "Error",
+        description: "User not authenticated",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const recordRef = ref(database, `users/${user.id}/employees/${employeeId}/punching/${recordId}`);
+      
+      await update(recordRef, {
+        status: 'present',
+        markedLateBy: null,
+        markedLateAt: null,
+        markedHalfDayBy: null,
+        markedHalfDayAt: null
+      });
+
+      toast({
+        title: "Success",
+        description: "Attendance status reset to present",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error resetting status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to reset status",
+        variant: "destructive",
+      });
+    }
+  };
+
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
   const deleteAttendanceRecord = async (recordId: string, employeeId: string) => {
     if (!window.confirm('Are you sure you want to delete this attendance record?')) return;
 
@@ -273,7 +492,11 @@ const AttendanceManagement = () => {
       case 'present': return 'bg-green-100 text-green-700';
       case 'absent': return 'bg-red-100 text-red-700';
       case 'late': return 'bg-yellow-100 text-yellow-700';
+<<<<<<< HEAD
       case 'half-day': return 'bg-blue-100 text-blue-700';
+=======
+      case 'half-day': return 'bg-purple-100 text-purple-700';
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -293,7 +516,7 @@ const AttendanceManagement = () => {
           totalHours = 0;
         }
         
-        return totalHours * 60 + minutes; // Convert to total minutes
+        return totalHours * 60 + minutes;
       };
 
       const startMinutes = parseTime(startTime);
@@ -301,7 +524,7 @@ const AttendanceManagement = () => {
 
       let durationMinutes = endMinutes - startMinutes;
       if (durationMinutes < 0) {
-        durationMinutes += 24 * 60; // Add 24 hours if negative
+        durationMinutes += 24 * 60;
       }
 
       const hours = Math.floor(durationMinutes / 60);
@@ -344,7 +567,6 @@ const AttendanceManagement = () => {
 
     setExportLoading(true);
     try {
-      // Prepare CSV content
       const headers = [
         'Employee Name',
         'Employee ID',
@@ -385,7 +607,6 @@ const AttendanceManagement = () => {
         .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
-      // Create download link
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -445,8 +666,75 @@ const AttendanceManagement = () => {
     );
   };
 
+  const getNotificationDetails = (type: string) => {
+    switch (type) {
+      case 'punch-in':
+        return { title: 'Punched In', color: 'bg-green-100 text-green-800' };
+      case 'punch-out':
+        return { title: 'Punched Out', color: 'bg-blue-100 text-blue-800' };
+      case 'break-in':
+        return { title: 'Break Started', color: 'bg-yellow-100 text-yellow-800' };
+      case 'break-out':
+        return { title: 'Break Ended', color: 'bg-purple-100 text-purple-800' };
+      default:
+        return { title: 'Notification', color: 'bg-gray-100 text-gray-800' };
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Notification Popup */}
+      {showNotification && currentNotification && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm w-full ${getNotificationDetails(currentNotification.type).color} border-l-4 ${
+            currentNotification.type === 'punch-in' ? 'border-green-500' :
+            currentNotification.type === 'punch-out' ? 'border-blue-500' :
+            currentNotification.type === 'break-in' ? 'border-yellow-500' :
+            'border-purple-500'
+          }`}
+        >
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="ml-3 w-0 flex-1 pt-0.5">
+              <p className="text-sm font-medium">
+                {getNotificationDetails(currentNotification.type).title}
+              </p>
+              <p className="mt-1 text-sm">
+                <span className="font-semibold">{currentNotification.employeeName}</span>
+                {currentNotification.department && (
+                  <span> ({currentNotification.department})</span>
+                )}
+              </p>
+              <p className="mt-1 text-sm">
+                {currentNotification.type.includes('punch') ? 'Punch' : 'Break'} time: {currentNotification.time}
+              </p>
+              {currentNotification.email && (
+                <p className="mt-1 text-xs text-gray-600">
+                  {currentNotification.email}
+                </p>
+              )}
+            </div>
+            <div className="ml-4 flex-shrink-0 flex">
+              <button
+                onClick={() => setShowNotification(false)}
+                className="rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -608,7 +896,12 @@ const AttendanceManagement = () => {
                             </Badge>
                             {record.markedLateBy && (
                               <p className="text-xs text-gray-500 mt-1">
-                                Marked by {record.markedLateBy}
+                                Marked late by {record.markedLateBy}
+                              </p>
+                            )}
+                            {record.markedHalfDayBy && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Marked half day by {record.markedHalfDayBy}
                               </p>
                             )}
                             {record.markedHalfDayBy && (
@@ -624,7 +917,31 @@ const AttendanceManagement = () => {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-1">
+<<<<<<< HEAD
                               {record.status !== 'late' && record.status !== 'absent' && record.status !== 'half-day' && (
+=======
+                              {record.status === 'late' ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => markAsHalfDay(record.id, record.employeeId)}
+                                    className="text-purple-600 hover:text-purple-700"
+                                  >
+                                    <Sun className="h-3 w-3 mr-1" />
+                                    Half Day
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => resetStatus(record.id, record.employeeId)}
+                                    className="text-green-600 hover:text-green-700"
+                                  >
+                                    Reset
+                                  </Button>
+                                </>
+                              ) : record.status === 'half-day' ? (
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                                 <>
                                   <Button
                                     size="sm"
@@ -633,12 +950,37 @@ const AttendanceManagement = () => {
                                     className="text-yellow-600 hover:text-yellow-700"
                                   >
                                     <AlertTriangle className="h-3 w-3 mr-1" />
+<<<<<<< HEAD
                                     Mark Late
+=======
+                                    Late
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => resetStatus(record.id, record.employeeId)}
+                                    className="text-green-600 hover:text-green-700"
+                                  >
+                                    Reset
+                                  </Button>
+                                </>
+                              ) : record.status === 'present' ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => markAsLate(record.id, record.employeeId)}
+                                    className="text-yellow-600 hover:text-yellow-700"
+                                  >
+                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                    Late
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => markAsHalfDay(record.id, record.employeeId)}
+<<<<<<< HEAD
                                     className="text-blue-600 hover:text-blue-700"
                                   >
                                     <Clock3 className="h-3 w-3 mr-1" />
@@ -646,6 +988,15 @@ const AttendanceManagement = () => {
                                   </Button>
                                 </>
                               )}
+=======
+                                    className="text-purple-600 hover:text-purple-700"
+                                  >
+                                    <Sun className="h-3 w-3 mr-1" />
+                                    Half Day
+                                  </Button>
+                                </>
+                              ) : null}
+>>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                               <Button
                                 size="sm"
                                 variant="outline"

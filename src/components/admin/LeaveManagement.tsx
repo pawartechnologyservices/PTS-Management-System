@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Download, Filter, Search, AlertTriangle, Check, X, RotateCcw, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Download, Filter, Search, AlertTriangle, Check, X, RotateCcw, Trash2, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -37,6 +37,19 @@ interface LeaveRequest {
   approvedBy?: string;
 }
 
+interface Notification {
+  id: string;
+  type: 'new-leave' | 'approved' | 'rejected' | 'reopened';
+  employeeName: string;
+  employeeId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  timestamp: number;
+  read: boolean;
+}
+
 const LeaveManagement = () => {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -46,6 +59,19 @@ const LeaveManagement = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDate, setFilterDate] = useState('');
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+
+  // Request notification permission on component mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -69,10 +95,14 @@ const LeaveManagement = () => {
   }, [user]);
 
   useEffect(() => {
-    if (!user?.id || employees.length === 0) return;
+    if (!user?.id || employees.length === 0) {
+      setLoading(false);
+      return;
+    }
 
     const allRequests: LeaveRequest[] = [];
     const unsubscribeFunctions: (() => void)[] = [];
+    const processedRequests = new Set<string>();
 
     employees.forEach(employee => {
       const leavesRef = ref(database, `users/${user.id}/employees/${employee.id}/leaves`);
@@ -96,6 +126,27 @@ const LeaveManagement = () => {
           setLeaveRequests([...allRequests].sort((a, b) => 
             new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime()
           ));
+
+          // Check for new leave requests
+          requests.forEach(request => {
+            const requestKey = `${request.employeeId}-${request.id}`;
+            
+            // Check if this is a new request (applied within last 5 minutes)
+            if (new Date(request.appliedAt).getTime() > Date.now() - 300000 && 
+                !processedRequests.has(requestKey)) {
+              processedRequests.add(requestKey);
+              showSystemNotification({
+                type: 'new-leave',
+                employeeName: request.employeeName,
+                employeeId: request.employeeId,
+                leaveType: request.leaveType,
+                startDate: request.startDate,
+                endDate: request.endDate,
+                status: request.status,
+                timestamp: new Date(request.appliedAt).getTime()
+              });
+            }
+          });
         } else {
           // Remove requests for this employee if no data exists
           const updatedRequests = allRequests.filter(r => r.employeeId !== employee.id);
@@ -111,6 +162,81 @@ const LeaveManagement = () => {
     
     return () => unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
   }, [user, employees]);
+
+  const showSystemNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `${notification.type}-${notification.timestamp}`,
+      read: false
+    };
+
+    // Add to in-app notifications
+    setNotifications(prev => [newNotification, ...prev]);
+    setCurrentNotification(newNotification);
+    setShowNotification(true);
+
+    // Show browser notification if permission is granted
+    if (notificationPermission === 'granted') {
+      const notificationDetails = getNotificationDetails(notification.type);
+      try {
+        new Notification(notificationDetails.title, {
+          body: notificationDetails.description
+            .replace('{employee}', notification.employeeName)
+            .replace('{leaveType}', notification.leaveType)
+            .replace('{startDate}', new Date(notification.startDate).toLocaleDateString())
+            .replace('{endDate}', new Date(notification.endDate).toLocaleDateString()),
+          icon: '/logo.png', // Replace with your app's icon
+          tag: `leave-${notification.type}-${notification.timestamp}`
+        });
+      } catch (error) {
+        console.error('Error showing system notification:', error);
+      }
+    }
+
+    // Auto-hide after 5 seconds
+    const timeoutId = setTimeout(() => {
+      setShowNotification(false);
+      // Delay clearing current notification to allow animation to complete
+      setTimeout(() => setCurrentNotification(null), 500);
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  };
+
+  const getNotificationDetails = (type: string) => {
+    switch (type) {
+      case 'new-leave':
+        return { 
+          title: 'New Leave Request', 
+          description: '{employee} has applied for {leaveType} leave from {startDate} to {endDate}',
+          color: 'bg-blue-100 text-blue-800 border-blue-500'
+        };
+      case 'approved':
+        return { 
+          title: 'Leave Approved', 
+          description: '{employee}\'s {leaveType} leave has been approved',
+          color: 'bg-green-100 text-green-800 border-green-500'
+        };
+      case 'rejected':
+        return { 
+          title: 'Leave Rejected', 
+          description: '{employee}\'s {leaveType} leave has been rejected',
+          color: 'bg-red-100 text-red-800 border-red-500'
+        };
+      case 'reopened':
+        return { 
+          title: 'Leave Reopened', 
+          description: '{employee}\'s {leaveType} leave request has been reopened',
+          color: 'bg-yellow-100 text-yellow-800 border-yellow-500'
+        };
+      default:
+        return { 
+          title: 'Leave Update', 
+          description: 'There has been an update to a leave request',
+          color: 'bg-gray-100 text-gray-800 border-gray-500'
+        };
+    }
+  };
 
   useEffect(() => {
     let filtered = leaveRequests;
@@ -157,6 +283,42 @@ const LeaveManagement = () => {
 
       const leaveRef = ref(database, `users/${user.id}/employees/${request.employeeId}/leaves/${request.id}`);
       await update(leaveRef, updates);
+
+      // Show notification for status change
+      if (newStatus === 'approved') {
+        showSystemNotification({
+          type: 'approved',
+          employeeName: request.employeeName,
+          employeeId: request.employeeId,
+          leaveType: request.leaveType,
+          startDate: request.startDate,
+          endDate: request.endDate,
+          status: newStatus,
+          timestamp: Date.now()
+        });
+      } else if (newStatus === 'rejected') {
+        showSystemNotification({
+          type: 'rejected',
+          employeeName: request.employeeName,
+          employeeId: request.employeeId,
+          leaveType: request.leaveType,
+          startDate: request.startDate,
+          endDate: request.endDate,
+          status: newStatus,
+          timestamp: Date.now()
+        });
+      } else if (newStatus === 'pending') {
+        showSystemNotification({
+          type: 'reopened',
+          employeeName: request.employeeName,
+          employeeId: request.employeeId,
+          leaveType: request.leaveType,
+          startDate: request.startDate,
+          endDate: request.endDate,
+          status: newStatus,
+          timestamp: Date.now()
+        });
+      }
 
       toast({
         title: `Leave ${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}`,
@@ -264,7 +426,50 @@ const LeaveManagement = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Notification Popup */}
+      {showNotification && currentNotification && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm w-full ${getNotificationDetails(currentNotification.type).color} border-l-4`}
+        >
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="ml-3 w-0 flex-1 pt-0.5">
+              <p className="text-sm font-medium">
+                {getNotificationDetails(currentNotification.type).title}
+              </p>
+              <p className="mt-1 text-sm">
+                {getNotificationDetails(currentNotification.type).description
+                  .replace('{employee}', currentNotification.employeeName)
+                  .replace('{leaveType}', currentNotification.leaveType)
+                  .replace('{startDate}', new Date(currentNotification.startDate).toLocaleDateString())
+                  .replace('{endDate}', new Date(currentNotification.endDate).toLocaleDateString())}
+              </p>
+              <p className="mt-1 text-xs text-gray-600">
+                {new Date(currentNotification.timestamp).toLocaleTimeString()}
+              </p>
+            </div>
+            <div className="ml-4 flex-shrink-0 flex">
+              <button
+                onClick={() => setShowNotification(false)}
+                className="rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
