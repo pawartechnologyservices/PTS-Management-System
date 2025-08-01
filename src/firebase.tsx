@@ -2,17 +2,17 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
-
 const firebaseConfig = {
-  apiKey: "AIzaSyB68ihFnjn1B0PsnFkfkW74UENa373dzFg",
-  authDomain: "hrms-b8ccd.firebaseapp.com",
-  databaseURL: "https://hrms-b8ccd-default-rtdb.firebaseio.com",
-  projectId: "hrms-b8ccd",
-  storageBucket: "hrms-b8ccd.firebasestorage.app",
-  messagingSenderId: "17207169442",
-  appId: "1:17207169442:web:1df94cec187c1b684b62fb",
-  measurementId: "G-MGEK45172B"
+  apiKey: "AIzaSyBg7l4W3kfInLtUoC7cBKuhJ96dVep-cQ8",
+  authDomain: "hrms-efb58.firebaseapp.com",
+  databaseURL: "https://hrms-efb58-default-rtdb.firebaseio.com",
+  projectId: "hrms-efb58",
+  storageBucket: "hrms-efb58.firebasestorage.app",
+  messagingSenderId: "300163431851",
+  appId: "1:300163431851:web:f9091b645bebbe35b526ee",
+  measurementId: "G-Q1ZNEJ5NHN"
 };
+
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);

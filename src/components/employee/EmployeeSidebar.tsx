@@ -13,7 +13,8 @@ import {
   FileText,
   X,
   Building2,
-  MessageCircle // Added the MessageCircle icon
+  MessageCircle, // Added the MessageCircle icon
+  Workflow
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../hooks/useAuth';
@@ -32,6 +33,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
     { icon: Clock, label: 'Attendance', path: '/employee/attendance' },
     { icon: MessageCircle, label: 'Chat', path: '/employee/chat' }, 
     { icon: Calendar, label: 'Meetings', path: '/employee/meetings' },
+    { icon: Workflow, label: 'My Task', path: '/employee/mytask' },
     { icon: FolderOpen, label: 'Projects', path: '/employee/projects' },
     ...(user?.department === 'Digital Marketing' ? [
       { icon: Share2, label: 'Social Media Calendar', path: '/employee/social-calendar' }

@@ -16,6 +16,7 @@ import EmployeeChat from './EmployeeChat';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../ui/button';
 import { Menu, X } from 'lucide-react';
+import MyTask from './MyTask';
 
 const EmployeeDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -87,6 +88,7 @@ const EmployeeDashboard = () => {
               <Route path="/salary" element={<EmployeeSalarySlips />} />
               <Route path="/reports" element={<EmployeeReports />} />
               <Route path="/chat" element={<EmployeeChat />} />
+              <Route path='/mytask' element={<MyTask />} />
             </Routes>
           </div>
         </main>

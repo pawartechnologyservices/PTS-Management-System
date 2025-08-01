@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle, Bell } from 'lucide-react';
+import { Clock, Calendar, Download, MapPin, AlertTriangle, CheckCircle, XCircle, Bell, Sun } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -51,39 +51,45 @@ const EmployeeAttendance = () => {
   const [showNotification, setShowNotification] = useState(false);
   const [currentNotification, setCurrentNotification] = useState<Notification | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const prevRecordsRef = useRef<AttendanceRecord[]>([]);
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  // Request notification permission on component mount
+  // Enhanced notification permission request
   useEffect(() => {
     const requestNotificationPermission = async () => {
       if ('Notification' in window) {
         try {
-          const permission = await Notification.requestPermission();
-          setNotificationPermission(permission);
+          // Check current permission first
+          if (Notification.permission === 'granted') {
+            setNotificationPermission('granted');
+            return;
+          }
           
-          if (permission === 'granted') {
-            console.log('Notification permission granted');
+          if (Notification.permission !== 'denied') {
+            const permission = await Notification.requestPermission();
+            setNotificationPermission(permission);
+            
+            if (permission === 'granted') {
+              console.log('Notification permission granted');
+            }
           }
         } catch (error) {
           console.error('Error requesting notification permission:', error);
+          toast.error('Failed to request notification permission');
         }
-      } else if ('serviceWorker' in navigator && 'PushManager' in window) {
-        console.log('Push notifications might be supported');
       } else {
-        console.log('This browser does not support notifications');
+        console.warn('Notifications not supported in this browser');
       }
     };
 
     requestNotificationPermission();
   }, []);
 
-  // Track previous records for comparison
-  const [prevRecords, setPrevRecords] = useState<AttendanceRecord[]>([]);
-
+  // Main data loading effect with notification detection
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
       console.error("User ID or Admin UID not available");
@@ -105,53 +111,60 @@ const EmployeeAttendance = () => {
           })).sort((a, b) => b.timestamp - a.timestamp);
           
           // Check for status changes by comparing with previous records
+          const currentPrevRecords = prevRecordsRef.current;
           records.forEach(record => {
-            const prevRecord = prevRecords.find(r => r.id === record.id);
+            const prevRecord = currentPrevRecords.find(r => r.id === record.id);
             
             // If this is a new late marking
             if (prevRecord && prevRecord.status !== 'late' && record.status === 'late') {
-              showSystemNotification({
+              const notificationPayload = {
                 type: 'late',
                 changedBy: record.markedLateBy || 'Admin',
                 changedAt: record.markedLateAt || new Date().toISOString(),
                 date: record.date,
                 status: record.status,
-                timestamp: record.timestamp
-              });
+                timestamp: Date.now()
+              };
+              showSystemNotification(notificationPayload);
+              showBrowserNotification(notificationPayload);
             }
             
             // If this is a new half-day marking
             if (prevRecord && prevRecord.status !== 'half-day' && record.status === 'half-day') {
-              showSystemNotification({
+              const notificationPayload = {
                 type: 'half-day',
                 changedBy: record.markedHalfDayBy || 'Admin',
                 changedAt: record.markedHalfDayAt || new Date().toISOString(),
                 date: record.date,
                 status: record.status,
-                timestamp: record.timestamp
-              });
+                timestamp: Date.now()
+              };
+              showSystemNotification(notificationPayload);
+              showBrowserNotification(notificationPayload);
             }
             
             // If status was reset from late/half-day to present
             if (prevRecord && 
                 (prevRecord.status === 'late' || prevRecord.status === 'half-day') && 
                 record.status === 'present') {
-              showSystemNotification({
+              const notificationPayload = {
                 type: 'status-reset',
                 changedBy: record.markedLateBy || record.markedHalfDayBy || 'Admin',
                 changedAt: new Date().toISOString(),
                 date: record.date,
                 status: record.status,
-                timestamp: record.timestamp
-              });
+                timestamp: Date.now()
+              };
+              showSystemNotification(notificationPayload);
+              showBrowserNotification(notificationPayload);
             }
           });
 
-          setPrevRecords(records); // Update previous records for next comparison
+          prevRecordsRef.current = records;
           setAttendanceRecords(records);
         } else {
           setAttendanceRecords([]);
-          setPrevRecords([]);
+          prevRecordsRef.current = [];
         }
       } catch (error) {
         console.error("Error fetching attendance data:", error);
@@ -162,8 +175,9 @@ const EmployeeAttendance = () => {
     });
 
     return () => unsubscribe();
-  }, [user, prevRecords]); // Only depend on user and prevRecords
+  }, [user]);
 
+  // System notification (in-app)
   const showSystemNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
     const newNotification: Notification = {
       ...notification,
@@ -171,51 +185,9 @@ const EmployeeAttendance = () => {
       read: false
     };
 
-    // Add to in-app notifications
     setNotifications(prev => [newNotification, ...prev]);
     setCurrentNotification(newNotification);
     setShowNotification(true);
-
-    // Show browser notification if permission is granted
-    if (notificationPermission === 'granted') {
-      const notificationDetails = getNotificationDetails(notification.type);
-      try {
-        const notificationOptions = {
-          body: notificationDetails.description
-            .replace('{date}', new Date(notification.date).toLocaleDateString())
-            .replace('{changedBy}', notification.changedBy),
-          icon: '/logo.png',
-          badge: '/badge.png',
-          vibrate: [200, 100, 200],
-          tag: `attendance-${notification.type}-${notification.timestamp}`,
-          data: {
-            url: window.location.href
-          }
-        };
-
-        const notificationInstance = new Notification(notificationDetails.title, notificationOptions);
-
-        notificationInstance.onclick = () => {
-          window.focus();
-          notificationInstance.close();
-        };
-
-      } catch (error) {
-        console.error('Error showing system notification:', error);
-        
-        try {
-          const fallbackOptions = {
-            body: notificationDetails.description
-              .replace('{date}', new Date(notification.date).toLocaleDateString())
-              .replace('{changedBy}', notification.changedBy),
-            icon: '/logo.png'
-          };
-          new Notification(notificationDetails.title, fallbackOptions);
-        } catch (fallbackError) {
-          console.error('Fallback notification also failed:', fallbackError);
-        }
-      }
-    }
 
     const timeoutId = setTimeout(() => {
       setShowNotification(false);
@@ -223,6 +195,73 @@ const EmployeeAttendance = () => {
     }, 5000);
 
     return () => clearTimeout(timeoutId);
+  };
+
+  // Browser/system notification
+  const showBrowserNotification = (notification: Omit<Notification, 'id' | 'read'>) => {
+    if (!('Notification' in window)) {
+      console.warn('This browser does not support desktop notifications');
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      console.log('Notification permission not granted');
+      return;
+    }
+
+    const notificationDetails = getNotificationDetails(notification.type);
+    const notificationBody = notificationDetails.description
+      .replace('{date}', new Date(notification.date).toLocaleDateString())
+      .replace('{changedBy}', notification.changedBy);
+
+    try {
+      const notificationOptions = {
+        body: notificationBody,
+        icon: '/logo.png',
+        badge: '/badge.png',
+        vibrate: [200, 100, 200],
+        tag: `attendance-${notification.type}-${notification.timestamp}`,
+        data: {
+          url: window.location.href,
+          timestamp: notification.timestamp
+        }
+      };
+
+      // Show notification
+      const notificationInstance = new Notification(notificationDetails.title, notificationOptions);
+
+      // Handle click on notification
+      notificationInstance.onclick = (event) => {
+        event.preventDefault();
+        window.focus();
+        notificationInstance.close();
+        
+        // Show the corresponding notification in-app
+        showSystemNotification(notification);
+      };
+
+      // Handle close event
+      notificationInstance.onclose = () => {
+        console.log('Notification closed');
+      };
+
+      return () => {
+        notificationInstance.close();
+      };
+    } catch (error) {
+      console.error('Error showing browser notification:', error);
+      
+      // Fallback for browsers that might not support all options
+      try {
+        new Notification(notificationDetails.title, {
+          body: notificationBody,
+          icon: '/logo.png'
+        });
+      } catch (fallbackError) {
+        console.error('Fallback notification also failed:', fallbackError);
+        toast.error('Failed to show notification');
+      }
+    }
   };
 
   const getNotificationDetails = (type: string) => {
@@ -313,7 +352,7 @@ const EmployeeAttendance = () => {
     }
 
     const csvContent = [
-      ['Date', 'Status', 'Punch In', 'Punch Out', 'Work Mode', 'Total Hours', 'Department', 'Designation'],
+      ['Date', 'Status', 'Punch In', 'Punch Out', 'Work Mode', 'Total Hours', 'Department', 'Designation', 'Marked Late By', 'Marked Late At', 'Marked Half Day By', 'Marked Half Day At'],
       ...filteredRecords.map(record => [
         new Date(record.date).toLocaleDateString(),
         record.status.charAt(0).toUpperCase() + record.status.slice(1),
@@ -322,7 +361,11 @@ const EmployeeAttendance = () => {
         record.workMode || 'office',
         record.totalHours || '-',
         record.department || user?.department || '-',
-        record.designation || user?.designation || '-'
+        record.designation || user?.designation || '-',
+        record.markedLateBy || '-',
+        record.markedLateAt ? new Date(record.markedLateAt).toLocaleString() : '-',
+        record.markedHalfDayBy || '-',
+        record.markedHalfDayAt ? new Date(record.markedHalfDayAt).toLocaleString() : '-'
       ])
     ].map(row => row.join(',')).join('\n');
 
@@ -350,6 +393,7 @@ const EmployeeAttendance = () => {
       case 'present': return <CheckCircle className="h-4 w-4" />;
       case 'absent': return <XCircle className="h-4 w-4" />;
       case 'late': return <AlertTriangle className="h-4 w-4" />;
+      case 'half-day': return <Sun className="h-4 w-4" />;
       default: return <Clock className="h-4 w-4" />;
     }
   };
@@ -567,7 +611,7 @@ const EmployeeAttendance = () => {
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-full bg-blue-100 text-blue-600">
-                      <Clock className="h-5 w-5" />
+                      <Sun className="h-5 w-5" />
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Half Days</p>
@@ -638,13 +682,13 @@ const EmployeeAttendance = () => {
                               {record.markedLateBy && (
                                 <Badge variant="outline" className="flex items-center gap-1 text-yellow-600">
                                   <AlertTriangle className="h-3 w-3" />
-                                  Marked by Admin
+                                  Marked Late
                                 </Badge>
                               )}
                               {record.markedHalfDayBy && (
                                 <Badge variant="outline" className="flex items-center gap-1 text-blue-600">
-                                  <Clock className="h-3 w-3" />
-                                  Marked by Admin
+                                  <Sun className="h-3 w-3" />
+                                  Marked Half Day
                                 </Badge>
                               )}
                             </div>
@@ -657,12 +701,12 @@ const EmployeeAttendance = () => {
                             </p>
                             {record.markedLateBy && (
                               <p className="text-xs text-yellow-600 mt-1">
-                                Marked as late by {record.markedLateBy} on {new Date(record.markedLateAt || '').toLocaleDateString()}
+                                Marked as late by {record.markedLateBy} on {new Date(record.markedLateAt || '').toLocaleString()}
                               </p>
                             )}
                             {record.markedHalfDayBy && (
                               <p className="text-xs text-blue-600 mt-1">
-                                Marked as half day by {record.markedHalfDayBy} on {new Date(record.markedHalfDayAt || '').toLocaleDateString()}
+                                Marked as half day by {record.markedHalfDayBy} on {new Date(record.markedHalfDayAt || '').toLocaleString()}
                               </p>
                             )}
                           </div>

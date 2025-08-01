@@ -14,9 +14,12 @@ import {
   Receipt,
   Settings,
   X,
-  MessageCircle
+  MessageCircle,
+  Table,
+  Workflow
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import path from 'path';
 
 interface AdminSidebarProps {
   onClose: () => void;
@@ -31,6 +34,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ onClose }) => {
     { icon: Clock, label: 'Attendance Management', path: '/admin/attendance' },
     { icon: Calendar, label: 'Meetings', path: '/admin/meetings' },
     { icon: FolderOpen, label: 'Projects', path: '/admin/projects' },
+    {icon:Workflow,label:'Employee Task' , path: '/admin/employeetask'},
     { icon: Plane, label: 'Leaves', path: '/admin/leaves' },
     { icon: MessageCircle, label: 'Chat', path: '/admin/chat' },
     { icon: CreditCard, label: 'Salary Management', path: '/admin/salary' },
