@@ -51,7 +51,7 @@ const MeetingManagement = () => {
     agenda: ''
   });
 
-  const departments = ['Software Development', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing'];
+  const departments = ['Software Development', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', ' Artificial Intelligence'];
 
   useEffect(() => {
     if (!user) return;

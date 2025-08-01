@@ -1,29 +1,28 @@
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../ui/dialog';
+import React, { useState, useEffect } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
-import { Plus, Upload, Camera, User, Phone, Calendar, DollarSign, FirstAid } from 'lucide-react';
-import { getDatabase, ref, set } from 'firebase/database';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, database } from '../../../firebase';
-import { useAuth } from '../../../hooks/useAuth';
+import { Upload, User, Phone, Calendar, DollarSign } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { Calendar as CalendarComp } from '../../ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '../../../lib/utils';
 import { toast } from 'sonner';
+import { useAuth } from '../../../hooks/useAuth';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 
-interface NewEmployee {
+interface EmployeeFormData {
+  id?: string;
   name: string;
   email: string;
   phone: string;
   department: string;
   designation: string;
-  password: string;
+  password?: string;
   profileImage: string;
-  joiningDate: Date | undefined;
+  joiningDate?: Date;
   salary: string;
   emergencyContactName: string;
   emergencyContactNumber: string;
@@ -36,19 +35,66 @@ interface NewEmployee {
 }
 
 interface AddEmployeeDialogProps {
-  departments: string[];
-  designations: string[];
-  onSuccess?: (employeeUid: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  employeeToEdit?: EmployeeFormData | null;
+  onSuccess: () => void;
+  onAddEmployee: (employee: Omit<EmployeeFormData, 'id'>, employeeId: string) => Promise<boolean>;
+  onUpdateEmployee: (employee: EmployeeFormData) => Promise<boolean>;
 }
 
+const departments = [
+  'Software Development',
+  'Web Development',
+  'Graphic Design',
+  'Product Design',
+  'Digital Marketing',
+  'Sales',
+  'Artificial Intelligence',
+  'Cyber Security'
+];
+
+const designations = [
+  'Software Developer',
+  'Web Developer',
+  'Project Manager',
+  'Software Manager',
+  'Web Development Manager',
+  'Software Team Leader',
+  'Web Team Leader',
+  'Sales Executive',
+  'Digital Marketing Team Leader',
+  'Digital Marketing Executive',
+  'Web Developer Intern',
+  'Web Developer Trainee',
+  'Cyber Security Intern',
+  'Software Developer Intern',
+  'Artificial Intelligence Intern',
+  'DevOps Developer Intern',
+  'IT Project Manager',
+  'Sales Manager',
+  'UI/UX Designer',
+  'Backend Developer',
+  'Frontend Developer',
+  'QA Engineer',
+  'Business Analyst',
+  'Product Manager',
+  'HR Executive'
+];
+
+const workModes = ['office', 'remote', 'hybrid'];
+const employmentTypes = ['full-time', 'part-time', 'contract', 'internship'];
+
 const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
-  departments,
-  designations,
-  onSuccess
+  open,
+  onOpenChange,
+  employeeToEdit,
+  onSuccess,
+  onAddEmployee,
+  onUpdateEmployee
 }) => {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState<NewEmployee>({
+  const [formData, setFormData] = useState<EmployeeFormData>({
     name: '',
     email: '',
     phone: '',
@@ -70,110 +116,14 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const workModes = ['office', 'remote', 'hybrid'];
-  const employmentTypes = ['full-time', 'part-time', 'contract', 'internship'];
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, profileImage: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!user || user.role !== 'admin') {
-      setError('Only admins can add employees');
-      return;
-    }
-
-    // Required field validation
-    const requiredFields = [
-      'name', 'email', 'phone', 'password', 
-      'department', 'designation', 'joiningDate',
-      'salary', 'emergencyContactName', 'emergencyContactNumber'
-    ];
-
-    const missingFields = requiredFields.filter(field => !formData[field as keyof NewEmployee]);
-
-    if (missingFields.length > 0) {
-      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (formData.emergencyContactNumber && formData.emergencyContactNumber.length < 10) {
-      setError('Emergency contact number must be at least 10 digits');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 1. Create authentication user
-const adminEmail = auth.currentUser?.email;
-const adminPassword = prompt("Please re-enter your password to create employee:"); // Not ideal UX, but quick fix
-
-// 1. Create authentication user (logs in as new employee)
-const userCredential = await createUserWithEmailAndPassword(
-  auth,
-  formData.email,
-  formData.password
-);
-
-// 2. Immediately sign back in as admin
-await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      const employeeUid = userCredential.user.uid;
-
-      // 2. Prepare employee data for database
-      const employeeData = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        department: formData.department,
-        designation: formData.designation,
-        profileImage: formData.profileImage,
-        joiningDate: formData.joiningDate?.toISOString(),
-        salary: parseFloat(formData.salary),
-        emergencyContact: {
-          name: formData.emergencyContactName,
-          phone: formData.emergencyContactNumber
-        },
-        address: formData.address,
-        workMode: formData.workMode,
-        employmentType: formData.employmentType,
-        bankDetails: {
-          accountNumber: formData.bankAccountNumber,
-          bankName: formData.bankName,
-          ifscCode: formData.ifscCode
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        role: 'employee',
-        addedBy: user.id,
-        status: 'active'
-      };
-
-      // 3. Save to Realtime Database under the admin's UID
-      const employeeRef = ref(database, `users/${user.id}/employees/${employeeUid}`);
-      await set(employeeRef, employeeData);
-
-      // 4. Also store a reference under the employee's own UID
-      const employeeSelfRef = ref(database, `users/${employeeUid}/employee`);
-      await set(employeeSelfRef, {
-        ...employeeData,
-        managedBy: user.id
+  useEffect(() => {
+    if (employeeToEdit) {
+      setFormData({
+        ...employeeToEdit,
+        joiningDate: employeeToEdit.joiningDate ? new Date(employeeToEdit.joiningDate) : undefined,
+        password: ''
       });
-
-      // 5. Reset form and close dialog
+    } else {
       setFormData({
         name: '',
         email: '',
@@ -193,368 +143,358 @@ await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
         bankName: '',
         ifscCode: ''
       });
+    }
+  }, [employeeToEdit, open]);
 
-      // 6. Call success callback if provided
-      if (onSuccess) {
-        onSuccess(employeeUid);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, profileImage: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSelectChange = (name: keyof EmployeeFormData, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleDateChange = (date: Date | undefined) => {
+    setFormData(prev => ({ ...prev, joiningDate: date }));
+  };
+
+  const validateForm = (): boolean => {
+    if (!user || user.role !== 'admin') {
+      setError('Only admins can manage employees');
+      return false;
+    }
+
+    const requiredFields = [
+      'name', 'email', 'phone', 'department', 'designation', 'joiningDate',
+      'salary', 'emergencyContactName', 'emergencyContactNumber'
+    ];
+    
+    const missingFields = requiredFields.filter(field => {
+      const value = formData[field as keyof EmployeeFormData];
+      return value === '' || value === undefined || (field === 'joiningDate' && !formData.joiningDate);
+    });
+
+    if (!employeeToEdit && !formData.password) {
+      missingFields.push('password');
+    }
+
+    if (missingFields.length > 0) {
+      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+      return false;
+    }
+
+    if (!employeeToEdit && formData.password && formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return false;
+    }
+
+    if (formData.phone.length < 10 || formData.emergencyContactNumber.length < 10) {
+      setError('Phone numbers must be at least 10 digits');
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      let success = false;
+      if (employeeToEdit && employeeToEdit.id) {
+        success = await onUpdateEmployee({
+          ...formData,
+          id: employeeToEdit.id
+        });
+      } else {
+        const auth = getAuth();
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          formData.email,
+          formData.password!
+        );
+        const employeeId = userCredential.user.uid;
+
+        const { id, ...employeeData } = formData;
+        success = await onAddEmployee(employeeData, employeeId);
       }
-toast.success('Employee created successfully!');
 
-      setOpen(false);
+      if (success) {
+        toast.success(`Employee ${employeeToEdit ? 'updated' : 'added'} successfully`);
+        onOpenChange(false);
+        onSuccess();
+      } else {
+        setError('Failed to process employee');
+      }
     } catch (err: any) {
-      console.error('Error adding employee:', err);
-      setError(err.message || 'Failed to create employee account');
+      console.error('Error managing employee:', err);
+      setError(err.message || 'Failed to process employee');
+      toast.error(err.message || 'Failed to process employee');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {loading && (
-  <div className="loading-overlay">
-    <div className="spinner" />
-    <p>Creating employee, please wait...</p>
-  </div>
-)}
-
-      <DialogTrigger asChild>
-        <Button className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Employee
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl overflow-y-auto max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Add New Employee</DialogTitle>
+          <DialogTitle>{employeeToEdit ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-4">
-          {error && (
-            <div className="p-3 bg-red-100 text-red-700 rounded-md text-sm">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
 
-          {/* Profile Picture Upload */}
-          <div className="flex flex-col items-center space-y-2">
-            <div className="relative">
-              <Avatar className="w-24 h-24 border-2 border-gray-200">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Personal Information */}
+          <div className="space-y-4">
+            <h3 className="font-medium flex items-center gap-2">
+              <User className="w-4 h-4" /> Personal Information
+            </h3>
+            
+            <div className="flex items-center gap-4">
+              <Avatar className="w-16 h-16">
                 <AvatarImage src={formData.profileImage} />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-2xl">
-                  {formData.name ? (
-                    formData.name.split(' ').map(n => n[0]).join('')
-                  ) : (
-                    <Camera className="w-8 h-8" />
-                  )}
-                </AvatarFallback>
+                <AvatarFallback>{formData.name.charAt(0)}</AvatarFallback>
               </Avatar>
-              <label
-                htmlFor="profile-upload"
-                className="absolute -bottom-2 -right-2 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                <input
-                  id="profile-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            <p className="text-sm text-gray-500">Click to upload profile picture</p>
-          </div>
-
-          {/* Basic Information Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Full Name *</label>
-              <Input
-                placeholder="John Doe"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                disabled={loading}
-              />
+              <div>
+                <label className="text-sm font-medium leading-none cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <Upload className="w-4 h-4" /> Upload Photo
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </label>
+                <p className="text-xs text-muted-foreground mt-1">JPG, PNG up to 2MB</p>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Email *</label>
-              <Input
-                type="email"
-                placeholder="john@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                disabled={loading}
-              />
-            </div>
+            <Input
+              name="name"
+              placeholder="Full Name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+            />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Phone *</label>
-              <Input
-                placeholder="+1 (555) 123-4567"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                disabled={loading}
-              />
-            </div>
+            <Input
+              name="email"
+              type="email"
+              placeholder="Email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              disabled={!!employeeToEdit}
+            />
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Password *</label>
+            {!employeeToEdit && (
               <Input
+                name="password"
                 type="password"
-                placeholder="At least 6 characters"
+                placeholder="Password"
                 value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                disabled={loading}
+                onChange={handleChange}
+                required
               />
-            </div>
-          </div>
+            )}
 
-          {/* Job Information Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Department *</label>
+            <Input
+              name="phone"
+              placeholder="Phone Number"
+              value={formData.phone}
+              onChange={handleChange}
+              required
+            />
+
+            <div className="flex gap-4">
               <Select
                 value={formData.department}
-                onValueChange={(value) => setFormData({...formData, department: value})}
-                disabled={loading}
+                onValueChange={(value) => handleSelectChange('department', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select department" />
+                  <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departments.map((dept) => (
+                  {departments.map(dept => (
                     <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Designation *</label>
               <Select
                 value={formData.designation}
-                onValueChange={(value) => setFormData({...formData, designation: value})}
-                disabled={loading}
+                onValueChange={(value) => handleSelectChange('designation', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select designation" />
+                  <SelectValue placeholder="Designation" />
                 </SelectTrigger>
                 <SelectContent>
-                  {designations.map((des) => (
-                    <SelectItem key={des} value={des}>{des}</SelectItem>
+                  {designations.map(designation => (
+                    <SelectItem key={designation} value={designation}>{designation}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Joining Date *</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !formData.joiningDate && "text-muted-foreground"
-                    )}
-                  >
-                    <Calendar className="mr-2 h-4 w-4" />
-                    {formData.joiningDate ? (
-                      format(formData.joiningDate, "PPP")
-                    ) : (
-                      <span>Pick a date</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <CalendarComp
-                    mode="single"
-                    selected={formData.joiningDate}
-                    onSelect={(date) => setFormData({...formData, joiningDate: date})}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Salary (Monthly) *</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-gray-500">
-                  <DollarSign className="h-4 w-4" />
-                </span>
-                <Input
-                  type="number"
-                  placeholder="50000"
-                  className="pl-8"
-                  value={formData.salary}
-                  onChange={(e) => setFormData({...formData, salary: e.target.value})}
-                  disabled={loading}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !formData.joiningDate && "text-muted-foreground"
+                  )}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {formData.joiningDate ? (
+                    format(formData.joiningDate, "PPP")
+                  ) : (
+                    <span>Joining Date</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <CalendarComp
+                  mode="single"
+                  selected={formData.joiningDate}
+                  onSelect={handleDateChange}
+                  initialFocus
                 />
-              </div>
-            </div>
+              </PopoverContent>
+            </Popover>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Work Mode</label>
+            <Input
+              name="address"
+              placeholder="Address"
+              value={formData.address}
+              onChange={handleChange}
+            />
+          </div>
+
+          {/* Additional Information */}
+          <div className="space-y-4">
+            <h3 className="font-medium flex items-center gap-2">
+              <DollarSign className="w-4 h-4" /> Employment Details
+            </h3>
+
+            <Input
+              name="salary"
+              placeholder="Salary"
+              value={formData.salary}
+              onChange={handleChange}
+              required
+            />
+
+            <div className="flex gap-4">
               <Select
                 value={formData.workMode}
-                onValueChange={(value) => setFormData({...formData, workMode: value})}
-                disabled={loading}
+                onValueChange={(value) => handleSelectChange('workMode', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select work mode" />
+                  <SelectValue placeholder="Work Mode" />
                 </SelectTrigger>
                 <SelectContent>
-                  {workModes.map((mode) => (
+                  {workModes.map(mode => (
                     <SelectItem key={mode} value={mode}>
                       {mode.charAt(0).toUpperCase() + mode.slice(1)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Employment Type</label>
               <Select
                 value={formData.employmentType}
-                onValueChange={(value) => setFormData({...formData, employmentType: value})}
-                disabled={loading}
+                onValueChange={(value) => handleSelectChange('employmentType', value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select employment type" />
+                  <SelectValue placeholder="Employment Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employmentTypes.map((type) => (
+                  {employmentTypes.map(type => (
                     <SelectItem key={type} value={type}>
-                      {type.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('-')}
+                      {type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ')}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          {/* Emergency Contact Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Emergency Contact Name *</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-gray-500">
-                  <User className="h-4 w-4" />
-                </span>
-                <Input
-                  placeholder="Emergency contact name"
-                  className="pl-8"
-                  value={formData.emergencyContactName}
-                  onChange={(e) => setFormData({...formData, emergencyContactName: e.target.value})}
-                  disabled={loading}
-                />
-              </div>
-            </div>
+            <h3 className="font-medium flex items-center gap-2 mt-6">
+              <Phone className="w-4 h-4" /> Emergency Contact
+            </h3>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Emergency Contact Number *</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-gray-500">
-                  <Phone className="h-4 w-4" />
-                </span>
-                <Input
-                  placeholder="Emergency contact number"
-                  className="pl-8"
-                  value={formData.emergencyContactNumber}
-                  onChange={(e) => setFormData({...formData, emergencyContactNumber: e.target.value})}
-                  disabled={loading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Address Section */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Address</label>
             <Input
-              placeholder="Full address"
-              value={formData.address}
-              onChange={(e) => setFormData({...formData, address: e.target.value})}
-              disabled={loading}
+              name="emergencyContactName"
+              placeholder="Emergency Contact Name"
+              value={formData.emergencyContactName}
+              onChange={handleChange}
+              required
+            />
+
+            <Input
+              name="emergencyContactNumber"
+              placeholder="Emergency Contact Number"
+              value={formData.emergencyContactNumber}
+              onChange={handleChange}
+              required
+            />
+
+            <h3 className="font-medium flex items-center gap-2 mt-6">
+              Bank Details
+            </h3>
+
+            <Input
+              name="bankAccountNumber"
+              placeholder="Bank Account Number"
+              value={formData.bankAccountNumber}
+              onChange={handleChange}
+            />
+
+            <Input
+              name="bankName"
+              placeholder="Bank Name"
+              value={formData.bankName}
+              onChange={handleChange}
+            />
+
+            <Input
+              name="ifscCode"
+              placeholder="IFSC Code"
+              value={formData.ifscCode}
+              onChange={handleChange}
             />
           </div>
+        </div>
 
-          {/* Bank Details Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Bank Name</label>
-              <Input
-                placeholder="Bank name"
-                value={formData.bankName}
-                onChange={(e) => setFormData({...formData, bankName: e.target.value})}
-                disabled={loading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Account Number</label>
-              <Input
-                placeholder="Bank account number"
-                value={formData.bankAccountNumber}
-                onChange={(e) => setFormData({...formData, bankAccountNumber: e.target.value})}
-                disabled={loading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">IFSC Code</label>
-              <Input
-                placeholder="IFSC code"
-                value={formData.ifscCode}
-                onChange={(e) => setFormData({...formData, ifscCode: e.target.value})}
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          {/* Form Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setOpen(false);
-                setError(null);
-              }}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={
-                loading ||
-                !formData.name ||
-                !formData.email ||
-                !formData.password ||
-                !formData.department ||
-                !formData.designation ||
-                !formData.joiningDate ||
-                !formData.salary ||
-                !formData.emergencyContactName ||
-                !formData.emergencyContactNumber ||
-                formData.password.length < 6
-              }
-            >
-              {loading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Creating...
-                </>
-              ) : 'Create Employee'}
-            </Button>
-          </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? 'Processing...' : employeeToEdit ? 'Update Employee' : 'Add Employee'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

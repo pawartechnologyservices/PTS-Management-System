@@ -83,10 +83,11 @@ interface AttendanceRecord {
   date: string;
   punchIn: string;
   punchOut: string | null;
-  status: string;
-  workMode: string;
+  status: 'present' | 'absent' | 'late' | 'half-day' | 'on-leave';
+  workMode: 'office' | 'remote' | 'hybrid';
   timestamp: number;
   department?: string;
+  hoursWorked?: number;
 }
 
 const AdminDashboardHome = () => {
@@ -96,12 +97,16 @@ const AdminDashboardHome = () => {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [marketingPosts, setMarketingPosts] = useState<MarketingPost[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     activeEmployees: 0,
     pendingLeaves: 0,
     todayPresent: 0,
+    todayLate: 0,
+    todayHalfDay: 0,
+    todayOnLeave: 0,
+    todayAbsent: 0,
     totalProjects: 0,
     activeProjects: 0,
     completedProjects: 0,
@@ -145,9 +150,8 @@ const AdminDashboardHome = () => {
     if (marketingPosts.length === 0) return;
 
     const today = new Date();
-    const todayDateString = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    const todayDateString = today.toISOString().split('T')[0];
 
-    // Check for posts scheduled for today
     const todayPosts = marketingPosts.filter(post => {
       return (
         post.scheduledDate === todayDateString && 
@@ -159,7 +163,6 @@ const AdminDashboardHome = () => {
       showScheduledPostsNotification(todayPosts);
     }
 
-    // Set up interval to check for upcoming posts every minute
     const checkInterval = setInterval(() => {
       const now = new Date();
       const currentHour = now.getHours();
@@ -168,12 +171,10 @@ const AdminDashboardHome = () => {
       todayPosts.forEach(post => {
         const [hours, minutes] = post.scheduledTime.split(':').map(Number);
         
-        // Check if it's exactly the scheduled time
         if (currentHour === hours && currentMinute === minutes) {
           showCenteredPostNotification(post);
         }
         
-        // Notify 15 minutes before scheduled time
         if (
           currentHour === hours && 
           currentMinute === minutes - 15 && 
@@ -182,7 +183,7 @@ const AdminDashboardHome = () => {
           showUpcomingPostNotification(post);
         }
       });
-    }, 60000); // Check every minute
+    }, 60000);
 
     return () => clearInterval(checkInterval);
   }, [marketingPosts, notificationPermission]);
@@ -208,19 +209,16 @@ const AdminDashboardHome = () => {
   };
 
   const showCenteredPostNotification = (post: MarketingPost) => {
-    // Clear any existing notification
     if (notificationTimeout) {
       clearTimeout(notificationTimeout);
       setNotificationTimeout(null);
     }
 
-    // Set the active notification with 10 second timer
     setActiveNotification({
       post,
       timer: 10
     });
 
-    // Start countdown
     const interval = setInterval(() => {
       setActiveNotification(prev => {
         if (prev && prev.timer > 1) {
@@ -232,7 +230,6 @@ const AdminDashboardHome = () => {
       });
     }, 1000);
 
-    // Set timeout to automatically close after 10 seconds
     const timeout = setTimeout(() => {
       setActiveNotification(null);
     }, 10000);
@@ -274,7 +271,6 @@ const AdminDashboardHome = () => {
   useEffect(() => {
     if (!user?.id) return;
 
-    setLoading(true);
     const employeesRef = ref(database, `users/${user.id}/employees`);
     const unsubscribeEmployees = onValue(employeesRef, (snapshot) => {
       const employeesData = snapshot.val();
@@ -289,9 +285,10 @@ const AdminDashboardHome = () => {
       } else {
         setEmployees([]);
       }
+      setInitialLoadComplete(true);
     }, (error) => {
       console.error('Error fetching employees:', error);
-      setLoading(false);
+      setInitialLoadComplete(true);
     });
 
     return () => {
@@ -372,13 +369,26 @@ const AdminDashboardHome = () => {
       const unsubscribe = onValue(attendanceQuery, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => ({
-            id: key,
-            employeeId: employee.id,
-            employeeName: employee.name,
-            department: employee.department,
-            ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName' | 'department'>)
-          }));
+          const records: AttendanceRecord[] = Object.entries(data).map(([key, value]) => {
+            // Calculate hours worked for half-day status
+            let hoursWorked = 0;
+            if (value.punchIn && value.punchOut) {
+              const punchInTime = new Date(`1970-01-01T${value.punchIn}`);
+              const punchOutTime = new Date(`1970-01-01T${value.punchOut}`);
+              hoursWorked = (punchOutTime.getTime() - punchInTime.getTime()) / (1000 * 60 * 60);
+            }
+
+            return {
+              id: key,
+              employeeId: employee.id,
+              employeeName: employee.name,
+              department: employee.department,
+              ...(value as Omit<AttendanceRecord, 'id' | 'employeeId' | 'employeeName' | 'department'>),
+              status: value?.status || 'absent',
+              workMode: value?.workMode || 'office',
+              hoursWorked
+            };
+          });
           
           const existingRecords = allAttendanceRecords.filter(r => r.employeeId !== employee.id);
           allAttendanceRecords.splice(0, allAttendanceRecords.length, ...existingRecords, ...records);
@@ -402,7 +412,6 @@ const AdminDashboardHome = () => {
   useEffect(() => {
     if (!user?.id) return;
 
-    // Fetch marketing posts from all digital marketing employees
     const digitalMarketingEmployees = employees.filter(emp => emp.department === 'Digital Marketing');
     
     const allMarketingPosts: MarketingPost[] = [];
@@ -428,7 +437,6 @@ const AdminDashboardHome = () => {
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           ));
         } else {
-          // If no posts for this employee, keep other employees' posts
           setMarketingPosts(prev => prev.filter(p => 
             !digitalMarketingEmployees.some(emp => emp.id === p.createdBy)
           ));
@@ -444,14 +452,22 @@ const AdminDashboardHome = () => {
   }, [user, employees]);
 
   useEffect(() => {
-    if (employees.length > 0) {
+    if (employees.length > 0 || projects.length > 0 || marketingPosts.length > 0) {
       const activeCount = employees.filter(emp => emp.isActive).length;
       const today = new Date().toISOString().split('T')[0];
       
       const todayAttendance = attendanceRecords.filter(record => {
         const recordDate = new Date(record.date).toISOString().split('T')[0];
-        return recordDate === today && (record.status === 'present' || record.status === 'late');
-      }).length;
+        return recordDate === today;
+      });
+
+      // Calculate various attendance statuses
+      const todayPresent = todayAttendance.filter(a => a.status === 'present').length;
+      const todayLate = todayAttendance.filter(a => a.status === 'late').length;
+      const todayHalfDay = todayAttendance.filter(a => a.status === 'half-day' || 
+        (a.hoursWorked && a.hoursWorked < 4)).length; // Also count <4 hours as half-day
+      const todayOnLeave = todayAttendance.filter(a => a.status === 'on-leave').length;
+      const todayAbsent = activeCount - (todayPresent + todayLate + todayHalfDay + todayOnLeave);
 
       const pendingLeaves = leaveRequests.filter(request => 
         request.status === 'pending'
@@ -469,18 +485,21 @@ const AdminDashboardHome = () => {
         project.status === 'paused'
       ).length;
 
-      setStats(prev => ({
-        ...prev,
+      setStats({
         totalEmployees: employees.length,
         activeEmployees: activeCount,
         pendingLeaves,
-        todayPresent: todayAttendance,
+        todayPresent,
+        todayLate,
+        todayHalfDay,
+        todayOnLeave,
+        todayAbsent,
         totalProjects: projects.length,
         activeProjects,
         completedProjects,
         pausedProjects,
         digitalMarketingPosts: marketingPosts.length
-      }));
+      });
     }
   }, [employees, leaveRequests, attendanceRecords, projects, marketingPosts]);
 
@@ -511,8 +530,8 @@ const AdminDashboardHome = () => {
     },
     {
       title: 'Today\'s Attendance',
-      value: `${stats.todayPresent}/${stats.activeEmployees}`,
-      subtitle: 'Present today',
+      value: `${stats.todayPresent + stats.todayLate + stats.todayHalfDay}/${stats.activeEmployees}`,
+      subtitle: `Present: ${stats.todayPresent} | Late: ${stats.todayLate} | Half-day: ${stats.todayHalfDay} | On Leave: ${stats.todayOnLeave} | Absent: ${stats.todayAbsent}`,
       icon: Clock,
       color: 'from-purple-50 to-purple-100 text-purple-700',
       onClick: () => setShowAttendancePopup(true)
@@ -534,14 +553,6 @@ const AdminDashboardHome = () => {
       onClick: () => setShowMarketingPopup(true)
     }
   ];
-
-  if (loading && employees.length === 0) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 relative">
@@ -604,19 +615,6 @@ const AdminDashboardHome = () => {
                 )}
               </div>
             </div>
-            
-            {/* <div className="mt-4 pt-4 border-t flex justify-end">
-              <Button
-                variant="outline"
-                onClick={closeNotification}
-                className="mr-2"
-              >
-                Dismiss
-              </Button>
-              <Button onClick={closeNotification}>
-                Mark as Published
-              </Button>
-            </div> */}
           </motion.div>
         </motion.div>
       )}

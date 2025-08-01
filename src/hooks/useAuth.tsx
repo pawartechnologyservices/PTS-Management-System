@@ -32,8 +32,15 @@ interface AuthContextType {
   login: (
     email: string, 
     password: string, 
-    role: string,
-    userData?: Partial<User>
+    role: string
+  ) => Promise<{
+    success: boolean;
+    message?: string;
+  }>;
+  signup: (
+    email: string,
+    password: string,
+    userData: Partial<User>
   ) => Promise<{
     success: boolean;
     message?: string;
@@ -58,74 +65,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
- const fetchUserData = async (firebaseUser: FirebaseUser): Promise<User | null> => {
-  try {
-    const db = database;
-    
-    // Check if admin
-    const adminRef = ref(db, `users/${firebaseUser.uid}`);
-    const adminSnapshot = await get(adminRef);
+  const fetchUserData = async (firebaseUser: FirebaseUser): Promise<User | null> => {
+    try {
+      const db = database;
+      
+      // Check if admin
+      const adminRef = ref(db, `users/${firebaseUser.uid}`);
+      const adminSnapshot = await get(adminRef);
 
-    if (adminSnapshot.exists() && adminSnapshot.val().role === 'admin') {
-      const adminData = adminSnapshot.val();
-      return {
-        id: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        name: adminData.name || '',
-        role: 'admin',
-        createdAt: adminData.createdAt || new Date().toISOString(),
-        profileImage: adminData.profileImage,
-      };
-    }
-
-    // Check if employee exists in any admin's employee list
-    const employeesRef = ref(db, 'users');
-    const snapshot = await get(employeesRef);
-
-    if (snapshot.exists()) {
-      let employeeData: any = null;
-      let adminUid = '';
-      let employeeId = '';
-
-      snapshot.forEach((adminSnapshot) => {
-        const employees = adminSnapshot.child('employees').val();
-        if (employees) {
-          Object.entries(employees).forEach(([key, emp]: [string, any]) => {
-            if (emp.email === firebaseUser.email) {
-              employeeData = emp;
-              adminUid = adminSnapshot.key || '';
-              employeeId = key;
-            }
-          });
-        }
-      });
-
-      if (!employeeData) {
-        // Employee not found in any admin's list - likely deleted
-        return null;
+      if (adminSnapshot.exists() && adminSnapshot.val().role === 'admin') {
+        const adminData = adminSnapshot.val();
+        return {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: adminData.name || '',
+          role: 'admin',
+          createdAt: adminData.createdAt || new Date().toISOString(),
+          profileImage: adminData.profileImage,
+        };
       }
 
-      return {
-        id: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        name: employeeData.name || '',
-        role: 'employee',
-        createdAt: employeeData.createdAt || new Date().toISOString(),
-        profileImage: employeeData.profileImage,
-        department: employeeData.department,
-        designation: employeeData.designation,
-        status: employeeData.status,
-        managedBy: employeeData.managedBy,
-        adminUid,
-        employeeId,
-      };
+      // Check if employee exists in any admin's employee list
+      const employeesRef = ref(db, 'users');
+      const snapshot = await get(employeesRef);
+
+      if (snapshot.exists()) {
+        let employeeData: any = null;
+        let adminUid = '';
+        let employeeId = '';
+
+        snapshot.forEach((adminSnapshot) => {
+          const employees = adminSnapshot.child('employees').val();
+          if (employees) {
+            Object.entries(employees).forEach(([key, emp]: [string, any]) => {
+              if (emp.email === firebaseUser.email) {
+                employeeData = emp;
+                adminUid = adminSnapshot.key || '';
+                employeeId = key;
+              }
+            });
+          }
+        });
+
+        if (!employeeData) {
+          return null;
+        }
+
+        return {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          name: employeeData.name || '',
+          role: 'employee',
+          createdAt: employeeData.createdAt || new Date().toISOString(),
+          profileImage: employeeData.profileImage,
+          department: employeeData.department,
+          designation: employeeData.designation,
+          status: employeeData.status,
+          managedBy: employeeData.managedBy,
+          adminUid,
+          employeeId,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      return null;
     }
-    return null;
-  } catch (error) {
-    console.error('Error fetching user data:', error);
-    return null;
-  }
-};
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -141,28 +147,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => unsubscribe();
   }, []);
 
- const login = async (
-  email: string,
-  password: string,
-  role: string,
-  userData?: Partial<User>
-): Promise<{ success: boolean; message?: string }> => {
-  setLoading(true);
-  try {
-    let userCredential;
-    
-    if (role === 'admin' && userData) {
-      // Handle signup flow
-      userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Store user data in database
-      await set(ref(database, `users/${userCredential.user.uid}`), {
-        ...userData,
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-      });
-    } else {
-      // First check if employee exists in database
+  const login = async (
+    email: string,
+    password: string,
+    role: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    setLoading(true);
+    try {
+      // First check if employee exists in database if role is employee
       if (role === 'employee') {
         const employeeExists = await checkEmployeeExists(email);
         if (!employeeExists) {
@@ -173,63 +165,104 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
       
-      // Handle login flow
-      userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       // Update last login timestamp
       if (userCredential.user.uid) {
         await set(ref(database, `users/${userCredential.user.uid}/lastLogin`), 
           new Date().toISOString());
       }
-    }
 
-    // Fetch and set the complete user data
-    const completeUserData = await fetchUserData(userCredential.user);
-    if (!completeUserData) {
-      await signOut(auth);
-      return { 
-        success: false, 
-        message: 'User data not found. Account may have been deleted.' 
-      };
-    }
-    
-    setUser(completeUserData);
-    return { success: true };
-  } catch (error: any) {
-    // ... existing error handling ...
-  } finally {
-    setLoading(false);
-  }
-};
-
-// Helper function to check if employee exists in database
-const checkEmployeeExists = async (email: string): Promise<boolean> => {
-  try {
-    const employeesRef = ref(database, 'users');
-    const snapshot = await get(employeesRef);
-
-    if (snapshot.exists()) {
-      let exists = false;
+      const completeUserData = await fetchUserData(userCredential.user);
+      if (!completeUserData) {
+        await signOut(auth);
+        return { 
+          success: false, 
+          message: 'User data not found. Account may have been deleted.' 
+        };
+      }
       
-      snapshot.forEach((adminSnapshot) => {
-        const employees = adminSnapshot.child('employees').val();
-        if (employees) {
-          Object.values(employees).forEach((emp: any) => {
-            if (emp.email === email) {
-              exists = true;
-            }
-          });
-        }
+      setUser(completeUserData);
+      return { success: true };
+    } catch (error: any) {
+      let message = 'Login failed';
+      if (error.code === 'auth/user-not-found') {
+        message = 'User not found';
+      } else if (error.code === 'auth/wrong-password') {
+        message = 'Incorrect password';
+      } else if (error.code === 'auth/invalid-email') {
+        message = 'Invalid email address';
+      }
+      return { success: false, message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signup = async (
+    email: string,
+    password: string,
+    userData: Partial<User>
+  ): Promise<{ success: boolean; message?: string }> => {
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Store user data in database
+      await set(ref(database, `users/${userCredential.user.uid}`), {
+        ...userData,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
       });
+
+      const completeUserData = await fetchUserData(userCredential.user);
+      setUser(completeUserData);
       
-      return exists;
+      return { success: true };
+    } catch (error: any) {
+      let message = 'Signup failed';
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'Email already in use';
+      } else if (error.code === 'auth/invalid-email') {
+        message = 'Invalid email address';
+      } else if (error.code === 'auth/weak-password') {
+        message = 'Password should be at least 6 characters';
+      }
+      console.error('Signup error:', error);
+      return { success: false, message };
+    } finally {
+      setLoading(false);
     }
-    return false;
-  } catch (error) {
-    console.error('Error checking employee existence:', error);
-    return false;
-  }
-};
+  };
+
+  const checkEmployeeExists = async (email: string): Promise<boolean> => {
+    try {
+      const employeesRef = ref(database, 'users');
+      const snapshot = await get(employeesRef);
+
+      if (snapshot.exists()) {
+        let exists = false;
+        
+        snapshot.forEach((adminSnapshot) => {
+          const employees = adminSnapshot.child('employees').val();
+          if (employees) {
+            Object.values(employees).forEach((emp: any) => {
+              if (emp.email === email) {
+                exists = true;
+              }
+            });
+          }
+        });
+        
+        return exists;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking employee existence:', error);
+      return false;
+    }
+  };
+
   const logout = async (): Promise<void> => {
     try {
       await signOut(auth);
@@ -275,6 +308,7 @@ const checkEmployeeExists = async (email: string): Promise<boolean> => {
       value={{
         user,
         login,
+        signup,
         logout,
         loading,
         resetPassword,

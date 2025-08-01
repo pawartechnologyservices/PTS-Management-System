@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-<<<<<<< HEAD
-import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Clock3 } from 'lucide-react';
-=======
 import { Calendar, Clock, Download, Filter, Search, Users, AlertTriangle, Trash2, Sun, Bell } from 'lucide-react';
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -393,13 +389,9 @@ const AttendanceManagement = () => {
       await update(recordRef, {
         status: 'half-day',
         markedHalfDayBy: user.name || 'admin',
-<<<<<<< HEAD
-        markedHalfDayAt: new Date().toISOString()
-=======
         markedHalfDayAt: new Date().toISOString(),
         markedLateBy: null,
         markedLateAt: null
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
       });
 
       toast({
@@ -417,8 +409,6 @@ const AttendanceManagement = () => {
     }
   };
 
-<<<<<<< HEAD
-=======
   const resetStatus = async (recordId: string, employeeId: string) => {
     if (!user?.id) {
       toast({
@@ -455,7 +445,6 @@ const AttendanceManagement = () => {
     }
   };
 
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
   const deleteAttendanceRecord = async (recordId: string, employeeId: string) => {
     if (!window.confirm('Are you sure you want to delete this attendance record?')) return;
 
@@ -492,11 +481,7 @@ const AttendanceManagement = () => {
       case 'present': return 'bg-green-100 text-green-700';
       case 'absent': return 'bg-red-100 text-red-700';
       case 'late': return 'bg-yellow-100 text-yellow-700';
-<<<<<<< HEAD
-      case 'half-day': return 'bg-blue-100 text-blue-700';
-=======
       case 'half-day': return 'bg-purple-100 text-purple-700';
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
       default: return 'bg-gray-100 text-gray-700';
     }
   };
@@ -904,11 +889,6 @@ const AttendanceManagement = () => {
                                 Marked half day by {record.markedHalfDayBy}
                               </p>
                             )}
-                            {record.markedHalfDayBy && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                Marked half day by {record.markedHalfDayBy}
-                              </p>
-                            )}
                           </td>
                           <td className="p-3">
                             <Badge variant="outline">
@@ -917,9 +897,6 @@ const AttendanceManagement = () => {
                           </td>
                           <td className="p-3">
                             <div className="flex gap-1">
-<<<<<<< HEAD
-                              {record.status !== 'late' && record.status !== 'absent' && record.status !== 'half-day' && (
-=======
                               {record.status === 'late' ? (
                                 <>
                                   <Button
@@ -941,7 +918,6 @@ const AttendanceManagement = () => {
                                   </Button>
                                 </>
                               ) : record.status === 'half-day' ? (
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                                 <>
                                   <Button
                                     size="sm"
@@ -950,9 +926,6 @@ const AttendanceManagement = () => {
                                     className="text-yellow-600 hover:text-yellow-700"
                                   >
                                     <AlertTriangle className="h-3 w-3 mr-1" />
-<<<<<<< HEAD
-                                    Mark Late
-=======
                                     Late
                                   </Button>
                                   <Button
@@ -974,21 +947,11 @@ const AttendanceManagement = () => {
                                   >
                                     <AlertTriangle className="h-3 w-3 mr-1" />
                                     Late
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                                   </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => markAsHalfDay(record.id, record.employeeId)}
-<<<<<<< HEAD
-                                    className="text-blue-600 hover:text-blue-700"
-                                  >
-                                    <Clock3 className="h-3 w-3 mr-1" />
-                                    Half Day
-                                  </Button>
-                                </>
-                              )}
-=======
                                     className="text-purple-600 hover:text-purple-700"
                                   >
                                     <Sun className="h-3 w-3 mr-1" />
@@ -996,7 +959,6 @@ const AttendanceManagement = () => {
                                   </Button>
                                 </>
                               ) : null}
->>>>>>> dc553ae1e5c7ca72affa8a180c014fe0da7f519e
                               <Button
                                 size="sm"
                                 variant="outline"

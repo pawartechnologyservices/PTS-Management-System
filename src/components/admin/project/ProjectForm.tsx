@@ -51,7 +51,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
   onSubmit,
   onCancel
 }) => {
-  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing'];
+  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', ' Artificial Intelligence'];
   const priorities = ['low', 'medium', 'high', 'urgent'];
   const statuses = ['not_started', 'in_progress', 'on_hold', 'completed'];
   const allTags = ['Frontend', 'Backend', 'UI/UX', 'E-commerce', 'Mobile', 'SEO', 'CMS'];

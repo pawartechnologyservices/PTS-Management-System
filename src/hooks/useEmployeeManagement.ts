@@ -42,7 +42,8 @@ export const useEmployeeManagement = () => {
     'Sales',
     'Product Designing',
     'Web Development',
-    'Graphic Designing'
+    'Graphic Designing', 
+    ' Artificial Intelligence'
   ];
 
   const designations = [

@@ -178,9 +178,9 @@ const ExpenseManagement = () => {
   });
 
   // Constants
-  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', 'Office', 'HR', 'Finance'];
+  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', ' Artificial Intelligence', 'Graphic Designing', 'Office', 'HR', 'Finance'];
   const categories = ['Office Supplies', 'Travel', 'Food & Catering', 'Equipment', 'Software Licenses', 'Marketing', 'Utilities', 'Salaries', 'Rent', 'Maintenance', 'Other'];
-  const paymentMethods = ['Cash', 'Bank Transfer', 'Credit Card', 'UPI', 'Cheque', 'PayPal', 'Other'];
+  const paymentMethods = ['Cash', 'Bank Transfer', 'Credit Card', 'UPI', ' meri life Cheque', 'PayPal', 'Other'];
   const recurrenceOptions = ['none', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
   const incomeStatuses = ['pending', 'paid', 'overdue', 'partially_paid'];
   const currencies = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'Other'];

@@ -17,7 +17,7 @@ type AuthMode = 'login' | 'signup';
 
 const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => {
   const navigate = useNavigate();
-  const { user, login } = useAuth();
+  const { user, login, signup } = useAuth();
   
   // Form state
   const [email, setEmail] = useState('');
@@ -62,7 +62,6 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
           title: "Success",
           description: "Admin login successful!",
         });
-        // The useEffect will handle the redirect when user state updates
       } else {
         toast({
           title: "Error",
@@ -113,12 +112,11 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
 
     setLoading(true);
     try {
-      const result = await login(email, password, 'admin', {
+      const result = await signup(email, password, {
         name,
         email,
         role: 'admin',
         isActive: true,
-        isNewUser: true // Flag to indicate this is a new user
       });
       
       if (result.success) {
@@ -128,7 +126,6 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
         });
         setJustSignedUp(true);
         setMode('login');
-        // Clear password fields but keep email
         setPassword('');
         setConfirmPassword('');
       } else {
@@ -139,6 +136,7 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
         });
       }
     } catch (error: any) {
+      console.error('Signup error:', error);
       toast({
         title: "Error",
         description: error.message || "Signup failed",
@@ -151,7 +149,6 @@ const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onForgotPassword }) => 
 
   const toggleMode = () => {
     setMode(mode === 'login' ? 'signup' : 'login');
-    // When switching to login mode, keep the email if user just signed up
     if (mode === 'signup' && !justSignedUp) {
       setEmail('');
     }
