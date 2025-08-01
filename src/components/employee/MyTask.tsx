@@ -11,6 +11,7 @@ import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { Badge } from '../ui/badge';
 import { format } from 'date-fns';
+import { Input } from '../ui/input';
 
 interface TaskComment {
   text: string;
@@ -42,6 +43,7 @@ const MyTasks: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<DailyTask | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<string>('');
 
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
@@ -117,9 +119,14 @@ const MyTasks: React.FC = () => {
   };
 
   const filteredTasks = tasks.filter(task => {
-    if (filterStatus === 'all') return true;
-    return task.status === filterStatus;
+    const statusMatch = filterStatus === 'all' || task.status === filterStatus;
+    const dateMatch = !filterDate || task.date === filterDate;
+    return statusMatch && dateMatch;
   });
+
+  const clearDateFilter = () => {
+    setFilterDate('');
+  };
 
   if (loading) {
     return (
@@ -164,6 +171,23 @@ const MyTasks: React.FC = () => {
               <SelectItem value="completed">Completed</SelectItem>
             </SelectContent>
           </Select>
+          <div className="relative">
+            <Input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              placeholder="Filter by date"
+              className="w-[180px]"
+            />
+            {filterDate && (
+              <button
+                onClick={clearDateFilter}
+                className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <Button
             variant={viewMode === 'table' ? 'default' : 'outline'}
             size="sm"
