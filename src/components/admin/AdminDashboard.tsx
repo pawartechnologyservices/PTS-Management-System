@@ -18,6 +18,7 @@ import SettingsManagement from './SettingsManagement';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../ui/button';
 import { Menu, X } from 'lucide-react';
+import DailyTaskEmployee from './DailyTaskEmployee';
 
 const AdminDashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,6 +92,7 @@ const AdminDashboard = () => {
               <Route path="/reports" element={<ReportsManagement />} />
               <Route path="/expenses" element={<ExpenseManagement />} />
               <Route path="/settings" element={<SettingsManagement />} />
+              <Route path='/employeetask'element={<DailyTaskEmployee />}/>
             </Routes>
           </div>
         </main>

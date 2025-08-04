@@ -1,142 +1,42 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Receipt, Plus, Filter, Download, Trash2, Clock, AlertCircle, 
-  CheckCircle2, XCircle, FileText, Calendar as CalendarIcon, 
-  PieChart as PieChartIcon, BarChart2, Wallet, CreditCard, RotateCw, Bell, FileUp 
+  Receipt, Plus, Filter, Download, Trash2, FileText, Users, 
+  Home, Zap, Utensils, User, Heart, PenTool, Wrench, 
+  Droplet, Printer, Palette, Truck, Mail, Tag, CircleDollarSign,
+  Calendar, Clock, AlertCircle, CheckCircle, PieChart, BarChart2
 } from 'lucide-react';
-import { 
-  Card, CardContent, CardHeader, CardTitle, CardFooter 
-} from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
-import { 
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
-} from '../ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
-import { 
-  Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow 
-} from '../ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
 import { Progress } from '../ui/progress';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { Calendar } from '../ui/calendar';
-import { format } from 'date-fns';
-import { ref, onValue, push, set, remove } from 'firebase/database';
+import { ref, onValue, push, set, remove, update } from 'firebase/database';
 import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import { toast } from '../ui/use-toast';
-import { ErrorBoundary } from 'react-error-boundary';
-
-// Chart.js imports
-import { Chart as ChartJS, 
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend 
-} from 'chart.js';
-import { Pie, Bar, Line } from 'react-chartjs-2';
-
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-);
-
-interface Expense {
-  id: string;
-  title: string;
-  amount: string;
-  paidTo: string;
-  department: string;
-  category: string;
-  paymentMethod: string;
-  description: string;
-  date: string;
-  isRecurring?: boolean;
-  recurrence?: string;
-  nextDueDate?: string;
-  approvalRequired?: boolean;
-  approvalStatus?: string;
-}
-
-interface Income {
-  id: string;
-  projectId: string;
-  clientName: string;
-  amount: string;
-  receivedDate: string;
-  invoiceNumber: string;
-  status: string;
-  milestone: string;
-  description: string;
-  taxAmount?: string;
-  currency: string;
-  exchangeRate: number;
-  convertedAmount?: number;
-}
-
-interface Budget {
-  id: string;
-  name: string;
-  amount: string;
-  category: string;
-  period: string;
-  startDate: string;
-  endDate?: string;
-}
-
-interface Approval {
-  id: string;
-  type: string;
-  title: string;
-  amount: string;
-  status: string;
-  requestedBy: string;
-  requestedAt: string;
-}
-
-interface DateRange {
-  startDate: Date;
-  endDate: Date;
-}
+import { generateInvoice } from '../../utils/invoiceGenerator';
+import { format, parseISO, subMonths } from 'date-fns';
 
 const ExpenseManagement = () => {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [incomes, setIncomes] = useState<Income[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState('office');
+  const [expenses, setExpenses] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [clientPayments, setClientPayments] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [showAddIncomeForm, setShowAddIncomeForm] = useState(false);
-  const [filteredExpenses, setFilteredExpenses] = useState<Expense[]>([]);
-  const [filteredIncomes, setFilteredIncomes] = useState<Income[]>([]);
+  const [showClientForm, setShowClientForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [filteredExpenses, setFilteredExpenses] = useState([]);
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
-  const [filterProject, setFilterProject] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterDateRange, setFilterDateRange] = useState<DateRange>({
-    startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)),
-    endDate: new Date()
-  });
-  const [activeTab, setActiveTab] = useState('expenses');
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Form states
+  const [timeRange, setTimeRange] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     amount: '',
@@ -145,357 +45,193 @@ const ExpenseManagement = () => {
     category: '',
     paymentMethod: '',
     description: '',
-    receipt: null,
-    isRecurring: false,
-    recurrence: 'none',
-    nextDueDate: '',
-    approvalRequired: false,
-    approvalStatus: 'pending'
+    date: format(new Date(), 'yyyy-MM-dd')
   });
-
-  const [incomeFormData, setIncomeFormData] = useState({
-    projectId: '',
-    clientName: '',
-    amount: '',
-    receivedDate: new Date().toISOString().split('T')[0],
-    invoiceNumber: '',
-    status: 'pending',
-    milestone: '',
-    description: '',
-    taxAmount: '',
-    currency: 'INR',
-    exchangeRate: 1,
-    invoiceFile: null
-  });
-
-  const [budgetFormData, setBudgetFormData] = useState({
+  const [clientForm, setClientForm] = useState({
     name: '',
+    contact: '',
+    email: '',
+    address: '',
+    packageAmount: '',
+    packageType: 'monthly',
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    description: ''
+  });
+  const [paymentForm, setPaymentForm] = useState({
     amount: '',
-    category: '',
-    period: 'monthly',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: ''
+    date: format(new Date(), 'yyyy-MM-dd'),
+    paymentMethod: 'Bank Transfer',
+    reference: '',
+    description: ''
   });
 
-  // Constants
-  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', ' Artificial Intelligence', 'Graphic Designing', 'Office', 'HR', 'Finance'];
-  const categories = ['Office Supplies', 'Travel', 'Food & Catering', 'Equipment', 'Software Licenses', 'Marketing', 'Utilities', 'Salaries', 'Rent', 'Maintenance', 'Other'];
-  const paymentMethods = ['Cash', 'Bank Transfer', 'Credit Card', 'UPI', ' meri life Cheque', 'PayPal', 'Other'];
-  const recurrenceOptions = ['none', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
-  const incomeStatuses = ['pending', 'paid', 'overdue', 'partially_paid'];
-  const currencies = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'Other'];
-  const budgetPeriods = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'];
-  const approvalStatuses = ['pending', 'approved', 'rejected'];
+  // Expense categories with icons
+  const expenseCategories = [
+    { value: 'office-rent', label: 'Office Rent', icon: <Home className="h-4 w-4 mr-2" /> },
+    { value: 'electricity', label: 'Electricity Bill', icon: <Zap className="h-4 w-4 mr-2" /> },
+    { value: 'lunch', label: 'Employee Lunch', icon: <Utensils className="h-4 w-4 mr-2" /> },
+    { value: 'salary', label: 'Employee Salary', icon: <User className="h-4 w-4 mr-2" /> },
+    { value: 'medical', label: 'Medical Expenses', icon: <Heart className="h-4 w-4 mr-2" /> },
+    { value: 'stationery', label: 'Stationery', icon: <PenTool className="h-4 w-4 mr-2" /> },
+    { value: 'servant', label: 'Servant Charge', icon: <User className="h-4 w-4 mr-2" /> },
+    { value: 'housekeeping', label: 'Housekeeping', icon: <Wrench className="h-4 w-4 mr-2" /> },
+    { value: 'equipment', label: 'Office Equipment', icon: <Wrench className="h-4 w-4 mr-2" /> },
+    { value: 'water', label: 'Water Bill', icon: <Droplet className="h-4 w-4 mr-2" /> },
+    { value: 'software', label: 'Software Subscription', icon: <FileText className="h-4 w-4 mr-2" /> },
+    { value: 'printing', label: 'Printing & Photocopy', icon: <Printer className="h-4 w-4 mr-2" /> },
+    { value: 'decor', label: 'Office Decor', icon: <Palette className="h-4 w-4 mr-2" /> },
+    { value: 'travel', label: 'Local Traveling', icon: <Truck className="h-4 w-4 mr-2" /> },
+    { value: 'courier', label: 'Courier', icon: <Mail className="h-4 w-4 mr-2" /> },
+    { value: 'tax', label: 'Tax', icon: <CircleDollarSign className="h-4 w-4 mr-2" /> },
+    { value: 'advertising', label: 'Advertising', icon: <Tag className="h-4 w-4 mr-2" /> },
+    { value: 'other', label: 'Other Expenses', icon: <Receipt className="h-4 w-4 mr-2" /> }
+  ];
 
-  // Load data from Firebase
+  const departments = ['Software', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', 'Office', 'HR', 'Finance'];
+  const paymentMethods = ['Cash', 'Bank Transfer', 'Credit Card', 'UPI', 'Cheque', 'Online Payment'];
+  const packageTypes = ['monthly', 'quarterly', 'half-yearly', 'yearly', 'custom'];
+  const timeRanges = [
+    { value: 'all', label: 'All Time' },
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'This Week' },
+    { value: 'month', label: 'This Month' },
+    { value: 'quarter', label: 'This Quarter' },
+    { value: 'year', label: 'This Year' },
+    { value: 'last-month', label: 'Last Month' },
+    { value: 'last-quarter', label: 'Last Quarter' },
+    { value: 'last-year', label: 'Last Year' }
+  ];
+
   useEffect(() => {
     if (!user) return;
 
     const expensesRef = ref(database, `users/${user.id}/expenses`);
-    const incomesRef = ref(database, `users/${user.id}/incomes`);
-    const projectsRef = ref(database, `users/${user.id}/projects`);
-    const budgetsRef = ref(database, `users/${user.id}/budgets`);
-    const approvalsRef = ref(database, `users/${user.id}/approvals`);
-
+    const clientsRef = ref(database, `users/${user.id}/clients`);
+    const paymentsRef = ref(database, `users/${user.id}/clientPayments`);
+    
     const unsubscribeExpenses = onValue(expensesRef, (snapshot) => {
-      const expensesData: Expense[] = [];
+      const expensesData = [];
       snapshot.forEach((childSnapshot) => {
         expensesData.push({
-          id: childSnapshot.key || '',
+          id: childSnapshot.key,
           ...childSnapshot.val()
         });
       });
       setExpenses(expensesData);
-      setIsLoading(false);
+      setFilteredExpenses(expensesData);
     });
 
-    const unsubscribeIncomes = onValue(incomesRef, (snapshot) => {
-      const incomesData: Income[] = [];
+    const unsubscribeClients = onValue(clientsRef, (snapshot) => {
+      const clientsData = [];
       snapshot.forEach((childSnapshot) => {
-        const income = childSnapshot.val();
-        incomesData.push({
-          id: childSnapshot.key || '',
-          ...income,
-          convertedAmount: parseFloat(income.amount) * parseFloat(income.exchangeRate || '1')
-        });
-      });
-      setIncomes(incomesData);
-    });
-
-    const unsubscribeProjects = onValue(projectsRef, (snapshot) => {
-      const projectsData: any[] = [];
-      snapshot.forEach((childSnapshot) => {
-        projectsData.push({
-          id: childSnapshot.key || '',
+        clientsData.push({
+          id: childSnapshot.key,
           ...childSnapshot.val()
         });
       });
-      setProjects(projectsData);
+      setClients(clientsData);
     });
 
-    const unsubscribeBudgets = onValue(budgetsRef, (snapshot) => {
-      const budgetsData: Budget[] = [];
+    const unsubscribePayments = onValue(paymentsRef, (snapshot) => {
+      const paymentsData = [];
       snapshot.forEach((childSnapshot) => {
-        budgetsData.push({
-          id: childSnapshot.key || '',
+        paymentsData.push({
+          id: childSnapshot.key,
           ...childSnapshot.val()
         });
       });
-      setBudgets(budgetsData);
-    });
-
-    const unsubscribeApprovals = onValue(approvalsRef, (snapshot) => {
-      const approvalsData: Approval[] = [];
-      snapshot.forEach((childSnapshot) => {
-        approvalsData.push({
-          id: childSnapshot.key || '',
-          ...childSnapshot.val()
-        });
-      });
-      setApprovals(approvalsData);
+      setClientPayments(paymentsData);
     });
 
     return () => {
       unsubscribeExpenses();
-      unsubscribeIncomes();
-      unsubscribeProjects();
-      unsubscribeBudgets();
-      unsubscribeApprovals();
+      unsubscribeClients();
+      unsubscribePayments();
     };
   }, [user]);
 
-  // Apply filters
   useEffect(() => {
-    let filteredExp = expenses;
-    let filteredInc = incomes;
+    let filtered = expenses;
 
-    // Date range filter
-    filteredExp = filteredExp.filter(expense => {
-      const expenseDate = new Date(expense.date);
-      return expenseDate >= filterDateRange.startDate && expenseDate <= filterDateRange.endDate;
-    });
+    // Apply time range filter
+    if (timeRange !== 'all') {
+      const now = new Date();
+      filtered = filtered.filter(expense => {
+        const expenseDate = parseISO(expense.date);
+        
+        switch (timeRange) {
+          case 'today':
+            return format(expenseDate, 'yyyy-MM-dd') === format(now, 'yyyy-MM-dd');
+          case 'week':
+            return expenseDate > subMonths(now, 1);
+          case 'month':
+            return expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
+          case 'quarter':
+            const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+            const expenseQuarter = Math.floor(expenseDate.getMonth() / 3) + 1;
+            return expenseQuarter === currentQuarter && expenseDate.getFullYear() === now.getFullYear();
+          case 'year':
+            return expenseDate.getFullYear() === now.getFullYear();
+          case 'last-month':
+            const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+            const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+            return expenseDate.getMonth() === lastMonth && expenseDate.getFullYear() === lastMonthYear;
+          case 'last-quarter':
+            const currentQuarter2 = Math.floor(now.getMonth() / 3) + 1;
+            const lastQuarter = currentQuarter2 === 1 ? 4 : currentQuarter2 - 1;
+            const lastQuarterYear = currentQuarter2 === 1 ? now.getFullYear() - 1 : now.getFullYear();
+            const expenseQuarter2 = Math.floor(expenseDate.getMonth() / 3) + 1;
+            return expenseQuarter2 === lastQuarter && expenseDate.getFullYear() === lastQuarterYear;
+          case 'last-year':
+            return expenseDate.getFullYear() === now.getFullYear() - 1;
+          default:
+            return true;
+        }
+      });
+    }
 
-    filteredInc = filteredInc.filter(income => {
-      const incomeDate = new Date(income.receivedDate);
-      return incomeDate >= filterDateRange.startDate && incomeDate <= filterDateRange.endDate;
-    });
-
-    // Department filter
+    // Apply department filter
     if (filterDepartment !== 'all') {
-      filteredExp = filteredExp.filter(expense => expense.department === filterDepartment);
+      filtered = filtered.filter(expense => expense.department === filterDepartment);
     }
 
-    // Category filter
+    // Apply category filter
     if (filterCategory !== 'all') {
-      filteredExp = filteredExp.filter(expense => expense.category === filterCategory);
+      filtered = filtered.filter(expense => expense.category === filterCategory);
     }
 
-    // Project filter
-    if (filterProject !== 'all') {
-      filteredInc = filteredInc.filter(income => income.projectId === filterProject);
-    }
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(expense => 
+        expense.title.toLowerCase().includes(query) || 
+        expense.paidTo.toLowerCase().includes(query) ||
+        expense.description.toLowerCase().includes(query)
+  )}
 
-    // Status filter
-    if (filterStatus !== 'all') {
-      filteredInc = filteredInc.filter(income => income.status === filterStatus);
-    }
+    setFilteredExpenses(filtered);
+  }, [filterDepartment, filterCategory, timeRange, searchQuery, expenses]);
 
-    setFilteredExpenses(filteredExp);
-    setFilteredIncomes(filteredInc);
-  }, [filterDepartment, filterCategory, filterProject, filterStatus, filterDateRange, expenses, incomes]);
-
-
-   const getTotalByCategory = (items: any[], category: string) => {
-    return items
-      .filter(item => item.category === category)
-      .reduce((total, item) => total + parseFloat(item.amount || 0), 0);
-  };
-  // Chart data
-  const expenseChartData = useMemo(() => ({
-    labels: categories,
-    datasets: [{
-      label: 'Expenses by Category',
-      data: categories.map(cat => getTotalByCategory(filteredExpenses, cat)),
-      backgroundColor: [
-        'rgba(255, 99, 132, 0.7)',
-        'rgba(54, 162, 235, 0.7)',
-        'rgba(255, 206, 86, 0.7)',
-        'rgba(75, 192, 192, 0.7)',
-        'rgba(153, 102, 255, 0.7)',
-        'rgba(255, 159, 64, 0.7)',
-        'rgba(199, 199, 199, 0.7)',
-        'rgba(83, 102, 255, 0.7)',
-        'rgba(255, 99, 71, 0.7)',
-        'rgba(147, 112, 219, 0.7)'
-      ],
-      borderColor: [
-        'rgba(255, 99, 132, 1)',
-        'rgba(54, 162, 235, 1)',
-        'rgba(255, 206, 86, 1)',
-        'rgba(75, 192, 192, 1)',
-        'rgba(153, 102, 255, 1)',
-        'rgba(255, 159, 64, 1)',
-        'rgba(199, 199, 199, 1)',
-        'rgba(83, 102, 255, 1)',
-        'rgba(255, 99, 71, 1)',
-        'rgba(147, 112, 219, 1)'
-      ],
-      borderWidth: 1
-    }]
-  }), [filteredExpenses]);
-
-   const getTotal = (items: any[], field: string = 'amount') => {
-    return items.reduce((total, item) => total + parseFloat(item[field] || 0), 0);
-  };
-
-  const incomeVsExpenseData = useMemo(() => ({
-    labels: ['Income', 'Expenses'],
-    datasets: [{
-      label: 'Amount',
-      data: [
-        getTotal(filteredIncomes, 'convertedAmount') || 0, 
-        getTotal(filteredExpenses) || 0
-      ],
-      backgroundColor: [
-        'rgba(75, 192, 192, 0.7)',
-        'rgba(255, 99, 132, 0.7)'
-      ],
-      borderColor: [
-        'rgba(75, 192, 192, 1)',
-        'rgba(255, 99, 132, 1)'
-      ],
-      borderWidth: 1
-    }]
-  }), [filteredIncomes, filteredExpenses]);
-
-  const monthlyTrendData = useMemo(() => ({
-    labels: Array.from({ length: 12 }, (_, i) => 
-      new Date(0, i).toLocaleString('default', { month: 'short' })
-    ),
-    datasets: [
-      {
-        label: 'Income',
-        data: Array(12).fill(0).map((_, i) => 
-          getTotal(
-            incomes.filter(inc => new Date(inc.receivedDate).getMonth() === i), 
-            'convertedAmount'
-          ) || 0
-        ),
-        borderColor: 'rgba(75, 192, 192, 1)',
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        tension: 0.1
-      },
-      {
-        label: 'Expenses',
-        data: Array(12).fill(0).map((_, i) => 
-          getTotal(
-            expenses.filter(exp => new Date(exp.date).getMonth() === i)
-          ) || 0
-        ),
-        borderColor: 'rgba(255, 99, 132, 1)',
-        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-        tension: 0.1
-      }
-    ]
-  }), [incomes, expenses]);
-
-  // Chart options
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Financial Data',
-      },
-    },
-  };
-
-  // Helper functions
-  const formatCurrency = (amount: number, currency: string = 'INR') => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: currency
-    }).format(amount);
-  };
-
-  // const getTotal = (items: any[], field: string = 'amount') => {
-  //   return items.reduce((total, item) => total + parseFloat(item[field] || 0), 0);
-  // };
-
-  // const getTotalByCategory = (items: any[], category: string) => {
-  //   return items
-  //     .filter(item => item.category === category)
-  //     .reduce((total, item) => total + parseFloat(item.amount || 0), 0);
-  // };
-
-  const getTotalByDepartment = (items: any[], department: string) => {
-    return items
-      .filter(item => item.department === department)
-      .reduce((total, item) => total + parseFloat(item.amount || 0), 0);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'paid': return 'bg-green-100 text-green-800';
-      case 'overdue': return 'bg-red-100 text-red-800';
-      case 'partially_paid': return 'bg-blue-100 text-blue-800';
-      case 'approved': return 'bg-green-100 text-green-800';
-      case 'rejected': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'pending': return <Clock className="h-4 w-4" />;
-      case 'paid': return <CheckCircle2 className="h-4 w-4" />;
-      case 'overdue': return <AlertCircle className="h-4 w-4" />;
-      case 'partially_paid': return <RotateCw className="h-4 w-4" />;
-      case 'approved': return <CheckCircle2 className="h-4 w-4" />;
-      case 'rejected': return <XCircle className="h-4 w-4" />;
-      default: return <FileText className="h-4 w-4" />;
-    }
-  };
-
-  // Form handlers
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleExpenseSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
 
     try {
       const newExpense = {
         ...formData,
-        date: new Date().toISOString(),
+        amount: parseFloat(formData.amount),
         createdAt: new Date().toISOString(),
         createdBy: user.id,
-        approvalStatus: formData.approvalRequired ? 'pending' : 'auto-approved'
+        type: 'office'
       };
 
-      if (formData.approvalRequired) {
-        const newApprovalRef = push(ref(database, `users/${user.id}/approvals`));
-        await set(newApprovalRef, {
-          ...newExpense,
-          type: 'expense',
-          requestedBy: user.id,
-          requestedAt: new Date().toISOString(),
-          status: 'pending',
-          approvers: ['team-lead', 'hr', 'admin']
-        });
-      } else {
-        const newExpenseRef = push(ref(database, `users/${user.id}/expenses`));
-        await set(newExpenseRef, newExpense);
-      }
+      // Push new expense to Firebase
+      const newExpenseRef = push(ref(database, `users/${user.id}/expenses`));
+      await set(newExpenseRef, newExpense);
 
       toast({
-        title: formData.approvalRequired ? "Approval Request Sent" : "Expense Added",
-        description: formData.approvalRequired 
-          ? "Expense requires approval and has been sent to the approvers" 
-          : "Expense has been successfully recorded"
+        title: "Expense Added",
+        description: "Expense has been successfully recorded"
       });
 
       setFormData({
@@ -506,12 +242,7 @@ const ExpenseManagement = () => {
         category: '',
         paymentMethod: '',
         description: '',
-        receipt: null,
-        isRecurring: false,
-        recurrence: 'none',
-        nextDueDate: '',
-        approvalRequired: false,
-        approvalStatus: 'pending'
+        date: format(new Date(), 'yyyy-MM-dd')
       });
       setShowAddForm(false);
     } catch (error) {
@@ -524,127 +255,102 @@ const ExpenseManagement = () => {
     }
   };
 
-  const handleIncomeSubmit = async (e: React.FormEvent) => {
+  const handleClientSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
 
     try {
-      const newIncome = {
-        ...incomeFormData,
+      const newClient = {
+        ...clientForm,
+        packageAmount: parseFloat(clientForm.packageAmount),
+        startDate: clientForm.startDate,
         createdAt: new Date().toISOString(),
         createdBy: user.id,
-        convertedAmount: parseFloat(incomeFormData.amount) * parseFloat(incomeFormData.exchangeRate.toString())
+        status: 'active'
       };
 
-      const newIncomeRef = push(ref(database, `users/${user.id}/incomes`));
-      await set(newIncomeRef, newIncome);
+      // Push new client to Firebase
+      const newClientRef = push(ref(database, `users/${user.id}/clients`));
+      await set(newClientRef, newClient);
 
       toast({
-        title: "Income Recorded",
-        description: "Income has been successfully recorded"
+        title: "Client Added",
+        description: "Client has been successfully added"
       });
 
-      setIncomeFormData({
-        projectId: '',
-        clientName: '',
-        amount: '',
-        receivedDate: new Date().toISOString().split('T')[0],
-        invoiceNumber: '',
-        status: 'pending',
-        milestone: '',
-        description: '',
-        taxAmount: '',
-        currency: 'INR',
-        exchangeRate: 1,
-        invoiceFile: null
-      });
-      setShowAddIncomeForm(false);
-    } catch (error) {
-      console.error('Error adding income:', error);
-      toast({
-        variant: 'destructive',
-        title: "Error",
-        description: "Failed to record income"
-      });
-    }
-  };
-
-  const handleBudgetSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-
-    try {
-      const newBudget = {
-        ...budgetFormData,
-        createdAt: new Date().toISOString(),
-        createdBy: user.id,
-        remainingAmount: budgetFormData.amount
-      };
-
-      const newBudgetRef = push(ref(database, `users/${user.id}/budgets`));
-      await set(newBudgetRef, newBudget);
-
-      toast({
-        title: "Budget Created",
-        description: "Budget has been successfully created"
-      });
-
-      setBudgetFormData({
+      setClientForm({
         name: '',
-        amount: '',
-        category: '',
-        period: 'monthly',
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: ''
+        contact: '',
+        email: '',
+        address: '',
+        packageAmount: '',
+        packageType: 'monthly',
+        startDate: format(new Date(), 'yyyy-MM-dd'),
+        description: ''
       });
+      setShowClientForm(false);
     } catch (error) {
-      console.error('Error adding budget:', error);
+      console.error('Error adding client:', error);
       toast({
         variant: 'destructive',
         title: "Error",
-        description: "Failed to create budget"
+        description: "Failed to add client"
       });
     }
   };
 
-  const handleApprovalAction = async (approvalId: string, action: string) => {
-    if (!user) return;
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    if (!user || !selectedClient) return;
 
     try {
-      const approvalRef = ref(database, `users/${user.id}/approvals/${approvalId}`);
-      await set(approvalRef, {
-        ...approvals.find(a => a.id === approvalId),
-        status: action,
-        approvedBy: user.id,
-        approvedAt: new Date().toISOString()
-      });
+      const paymentAmount = parseFloat(paymentForm.amount);
+      const newPayment = {
+        ...paymentForm,
+        amount: paymentAmount,
+        date: paymentForm.date,
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        createdAt: new Date().toISOString(),
+        createdBy: user.id
+      };
 
-      if (action === 'approved') {
-        const approvedExpense = approvals.find(a => a.id === approvalId);
-        if (approvedExpense) {
-          const newExpenseRef = push(ref(database, `users/${user.id}/expenses`));
-          await set(newExpenseRef, {
-            ...approvedExpense,
-            approvalStatus: 'approved'
-          });
-        }
-      }
+      // Push new payment to Firebase
+      const newPaymentRef = push(ref(database, `users/${user.id}/clientPayments`));
+      await set(newPaymentRef, newPayment);
+
+      // Update client's last payment date
+      const clientRef = ref(database, `users/${user.id}/clients/${selectedClient.id}`);
+      await update(clientRef, {
+        lastPaymentDate: paymentForm.date,
+        lastPaymentAmount: paymentAmount
+      });
 
       toast({
-        title: `Request ${action}`,
-        description: `The request has been ${action}`
+        title: "Payment Recorded",
+        description: "Client payment has been successfully recorded"
       });
+
+      setPaymentForm({
+        amount: '',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        paymentMethod: 'Bank Transfer',
+        reference: '',
+        description: ''
+      });
+      setShowPaymentForm(false);
+      setSelectedClient(null);
     } catch (error) {
-      console.error('Error updating approval:', error);
+      console.error('Error adding payment:', error);
       toast({
         variant: 'destructive',
         title: "Error",
-        description: `Failed to ${action} request`
+        description: "Failed to record payment"
       });
     }
   };
 
-  const handleDelete = async (type: string, id: string) => {
+  const handleDelete = async (type, id) => {
     if (!user) return;
     
     if (!window.confirm(`Are you sure you want to delete this ${type}?`)) return;
@@ -665,455 +371,345 @@ const ExpenseManagement = () => {
     }
   };
 
-  const exportData = (type: string) => {
-    let csvContent = '';
-    let fileName = '';
+  const getTotalExpenses = () => {
+    return filteredExpenses.reduce((total, expense) => total + parseFloat(expense.amount || 0), 0);
+  };
 
-    if (type === 'expenses') {
-      csvContent = [
-        ['Date', 'Title', 'Amount', 'Paid To', 'Department', 'Category', 'Payment Method', 'Description', 'Status'],
-        ...filteredExpenses.map(expense => [
-          new Date(expense.date).toLocaleDateString(),
-          expense.title,
-          expense.amount,
-          expense.paidTo,
-          expense.department,
-          expense.category,
-          expense.paymentMethod,
-          expense.description,
-          expense.approvalStatus
-        ])
-      ].map(row => row.join(',')).join('\n');
-      fileName = `expenses-report-${new Date().toISOString().split('T')[0]}.csv`;
-    } else if (type === 'incomes') {
-      csvContent = [
-        ['Date', 'Client', 'Project', 'Amount', 'Currency', 'Converted Amount', 'Invoice', 'Status', 'Milestone', 'Description'],
-        ...filteredIncomes.map(income => [
-          new Date(income.receivedDate).toLocaleDateString(),
-          income.clientName,
-          projects.find(p => p.id === income.projectId)?.name || 'N/A',
-          income.amount,
-          income.currency,
-          income.convertedAmount,
-          income.invoiceNumber,
-          income.status,
-          income.milestone,
-          income.description
-        ])
-      ].map(row => row.join(',')).join('\n');
-      fileName = `incomes-report-${new Date().toISOString().split('T')[0]}.csv`;
-    } else if (type === 'budgets') {
-      csvContent = [
-        ['Name', 'Amount', 'Category', 'Period', 'Start Date', 'End Date', 'Remaining'],
-        ...budgets.map(budget => [
-          budget.name,
-          budget.amount,
-          budget.category,
-          budget.period,
-          budget.startDate,
-          budget.endDate,
-          budget.remainingAmount
-        ])
-      ].map(row => row.join(',')).join('\n');
-      fileName = `budgets-report-${new Date().toISOString().split('T')[0]}.csv`;
-    }
+  const getCategoryTotal = (category) => {
+    return expenses
+      .filter(expense => expense.category === category)
+      .reduce((total, expense) => total + parseFloat(expense.amount || 0), 0);
+  };
+
+  const getClientTotalPayments = (clientId) => {
+    return clientPayments
+      .filter(payment => payment.clientId === clientId)
+      .reduce((total, payment) => total + parseFloat(payment.amount || 0), 0);
+  };
+
+  const getClientPendingAmount = (client) => {
+    const totalPaid = getClientTotalPayments(client.id);
+    return parseFloat(client.packageAmount) - totalPaid;
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(amount);
+  };
+
+  const formatDate = (dateString) => {
+    return format(parseISO(dateString), 'dd MMM yyyy');
+  };
+
+  const generateExpenseReport = () => {
+    const csvContent = [
+      ['Date', 'Title', 'Amount', 'Paid To', 'Department', 'Category', 'Payment Method', 'Description'],
+      ...filteredExpenses.map(expense => [
+        formatDate(expense.date),
+        expense.title,
+        expense.amount,
+        expense.paidTo,
+        expense.department,
+        expense.category,
+        expense.paymentMethod,
+        expense.description
+      ])
+    ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = fileName;
+    a.download = `expenses-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
 
-  // Budget utilization
-  const budgetUtilization = budgets.map(budget => {
-    const usedAmount = getTotal(
-      expenses.filter(exp => exp.category === budget.category),
-      'amount'
-    );
-    const utilization = (usedAmount / parseFloat(budget.amount)) * 100;
-    
-    return {
-      ...budget,
-      usedAmount,
-      utilization: Math.min(100, utilization)
-    };
-  });
+  const generateClientReport = () => {
+    const csvContent = [
+      ['Client Name', 'Contact', 'Package Amount', 'Package Type', 'Total Paid', 'Pending Amount', 'Status'],
+      ...clients.map(client => {
+        const totalPaid = getClientTotalPayments(client.id);
+        const pending = parseFloat(client.packageAmount) - totalPaid;
+        return [
+          client.name,
+          client.contact,
+          client.packageAmount,
+          client.packageType,
+          totalPaid,
+          pending,
+          pending <= 0 ? 'Paid' : 'Pending'
+        ]
+      })
+    ].map(row => row.join(',')).join('\n');
 
-  // Pending approvals
-  const pendingApprovals = approvals.filter(a => a.status === 'pending');
-
-  // Overdue invoices
-  const overdueIncomes = incomes.filter(income => 
-    income.status === 'overdue' || 
-    (income.status === 'pending' && new Date(income.receivedDate) < new Date())
-  );
-
-  // Recurring expenses
-  const recurringExpenses = expenses.filter(exp => exp.isRecurring);
-
-  // DateRangePicker component
-  const DateRangePicker = ({ dateRange, onDateRangeChange }: { dateRange: DateRange, onDateRangeChange: (range: DateRange) => void }) => {
-    const [startDate, setStartDate] = React.useState<Date | undefined>(dateRange.startDate);
-    const [endDate, setEndDate] = React.useState<Date | undefined>(dateRange.endDate);
-
-    React.useEffect(() => {
-      if (startDate && endDate) {
-        onDateRangeChange({ startDate, endDate });
-      }
-    }, [startDate, endDate, onDateRangeChange]);
-
-    return (
-      <div className="flex items-center gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-[240px] justify-start text-left font-normal"
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {startDate ? format(startDate, "PPP") : <span>Start date</span>}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={startDate}
-              onSelect={setStartDate}
-              initialFocus
-            />
-          </PopoverContent>
-        </Popover>
-
-        <span className="mx-1">to</span>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-[240px] justify-start text-left font-normal"
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {endDate ? format(endDate, "PPP") : <span>End date</span>}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={endDate}
-              onSelect={setEndDate}
-              initialFocus
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
-    );
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clients-report-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
-  // Error boundary fallback
-  const ChartErrorFallback = ({ error, resetErrorBoundary }: { error: Error, resetErrorBoundary: () => void }) => {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-600">Chart failed to load</p>
-        <button 
-          onClick={resetErrorBoundary}
-          className="mt-2 px-3 py-1 bg-red-100 text-red-700 rounded"
-        >
-          Try again
-        </button>
-      </div>
-    );
+  const generateInvoiceForClient = (client) => {
+    const payments = clientPayments.filter(p => p.clientId === client.id);
+    generateInvoice(client, payments);
   };
-
-  if (isLoading) {
-    return <div className="flex justify-center items-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-    </div>;
-  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 p-4 md:p-6">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Finance Dashboard</h1>
-          <p className="text-gray-600">Track and manage company finances</p>
+          <h1 className="text-2xl font-bold text-gray-800">Expense Management</h1>
+          <p className="text-gray-600">Track and manage company expenses and client payments</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setShowAddIncomeForm(true)} variant="outline">
+          <Button onClick={() => activeTab === 'office' ? setShowAddForm(true) : setShowClientForm(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Income
-          </Button>
-          <Button onClick={() => setShowAddForm(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Expense
+            {activeTab === 'office' ? 'Add Expense' : 'Add Client'}
           </Button>
         </div>
       </motion.div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-sm text-gray-600">Total Income</p>
-                <p className="text-lg font-bold">
-                  {formatCurrency(getTotal(filteredIncomes, 'convertedAmount'))}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-red-600" />
-              <div>
-                <p className="text-sm text-gray-600">Total Expenses</p>
-                <p className="text-lg font-bold">
-                  {formatCurrency(getTotal(filteredExpenses))}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <PieChartIcon className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-sm text-gray-600">Net Profit</p>
-                <p className="text-lg font-bold">
-                  {formatCurrency(
-                    getTotal(filteredIncomes, 'convertedAmount') - 
-                    getTotal(filteredExpenses)
-                  )}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-orange-600" />
-              <div>
-                <p className="text-sm text-gray-600">Pending Approvals</p>
-                <p className="text-lg font-bold">
-                  {pendingApprovals.length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Income vs Expenses</CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ErrorBoundary FallbackComponent={ChartErrorFallback}>
-              <Bar data={incomeVsExpenseData} options={chartOptions} />
-            </ErrorBoundary>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Expenses by Category</CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ErrorBoundary FallbackComponent={ChartErrorFallback}>
-              <Pie data={expenseChartData} options={chartOptions} />
-            </ErrorBoundary>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Trends</CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ErrorBoundary FallbackComponent={ChartErrorFallback}>
-              <Line data={monthlyTrendData} options={chartOptions} />
-            </ErrorBoundary>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Budget Utilization</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {budgetUtilization.map(budget => (
-              <div key={budget.id} className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span>{budget.name}</span>
-                  <span>
-                    {formatCurrency(budget.usedAmount)} / {formatCurrency(budget.amount)}
-                  </span>
-                </div>
-                <Progress 
-                  value={budget.utilization} 
-                  className="h-2"
-                  indicatorColor={budget.utilization > 80 ? 'bg-red-500' : budget.utilization > 50 ? 'bg-yellow-500' : 'bg-green-500'}
-                />
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>{budget.category}</span>
-                  <span>{Math.round(budget.utilization)}% used</span>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Alerts Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              Overdue Invoices
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {overdueIncomes.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {overdueIncomes.map(income => (
-                    <TableRow key={income.id}>
-                      <TableCell>{income.clientName}</TableCell>
-                      <TableCell>{formatCurrency(parseFloat(income.amount), income.currency)}</TableCell>
-                      <TableCell>{new Date(income.receivedDate).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleDelete('incomes', income.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-4 text-gray-500">
-                No overdue invoices
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Pending Approvals
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pendingApprovals.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingApprovals.map(approval => (
-                    <TableRow key={approval.id}>
-                      <TableCell>{approval.title}</TableCell>
-                      <TableCell>{formatCurrency(parseFloat(approval.amount))}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{approval.type}</Badge>
-                      </TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => handleApprovalAction(approval.id, 'approved')}
-                        >
-                          Approve
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => handleApprovalAction(approval.id, 'rejected')}
-                        >
-                          Reject
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-4 text-gray-500">
-                No pending approvals
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 w-full md:w-1/2">
-          <TabsTrigger value="expenses">
-            <CreditCard className="h-4 w-4 mr-2" />
-            Expenses
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="office">
+            <Home className="h-4 w-4 mr-2" />
+            Office Expenses
           </TabsTrigger>
-          <TabsTrigger value="incomes">
-            <Wallet className="h-4 w-4 mr-2" />
-            Income
-          </TabsTrigger>
-          <TabsTrigger value="budgets">
-            <PieChartIcon className="h-4 w-4 mr-2" />
-            Budgets
-          </TabsTrigger>
-          <TabsTrigger value="recurring">
-            <RotateCw className="h-4 w-4 mr-2" />
-            Recurring
+          <TabsTrigger value="clients">
+            <Users className="h-4 w-4 mr-2" />
+            Client Management
           </TabsTrigger>
         </TabsList>
 
-        {/* Expenses Tab */}
-        <TabsContent value="expenses">
-          <div className="space-y-4">
-            {/* Filters */}
+        {/* Office Expenses Tab */}
+        <TabsContent value="office" className="space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row gap-4">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-blue-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Expenses</p>
+                    <p className="text-lg font-bold">{formatCurrency(getTotalExpenses())}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-green-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">This Month</p>
+                    <p className="text-lg font-bold">{formatCurrency(
+                      expenses
+                        .filter(e => {
+                          const expenseDate = parseISO(e.date);
+                          const now = new Date();
+                          return expenseDate.getMonth() === now.getMonth() && 
+                                 expenseDate.getFullYear() === now.getFullYear();
+                        })
+                        .reduce((total, e) => total + parseFloat(e.amount || 0), 0)
+                    )}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Highest Category</p>
+                    <p className="text-lg font-bold">
+                      {expenseCategories.reduce((max, cat) => {
+                        const catTotal = getCategoryTotal(cat.value);
+                        return catTotal > max.amount ? 
+                          { name: cat.label, amount: catTotal } : max;
+                      }, { name: '', amount: 0 }).name}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-purple-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Transactions</p>
+                    <p className="text-lg font-bold">{filteredExpenses.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Add Expense Form */}
+          <AnimatePresence>
+            {showAddForm && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>Add New Expense</CardTitle>
+                    <CardDescription>Record your company expenses</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={handleExpenseSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Expense Title"
+                          value={formData.title}
+                          onChange={(e) => setFormData({...formData, title: e.target.value})}
+                          required
+                        />
+                        <Input
+                          placeholder="Amount (₹)"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.amount}
+                          onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Paid To"
+                          value={formData.paidTo}
+                          onChange={(e) => setFormData({...formData, paidTo: e.target.value})}
+                          required
+                        />
+                        <Select 
+                          value={formData.department} 
+                          onValueChange={(value) => setFormData({...formData, department: value})}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Departments</SelectItem>
+                            {departments.map(dept => (
+                              <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Select 
+                          value={formData.category} 
+                          onValueChange={(value) => setFormData({...formData, category: value})}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {expenseCategories.map(cat => (
+                              <SelectItem key={cat.value} value={cat.value}>
+                                <div className="flex items-center">
+                                  {cat.icon}
+                                  {cat.label}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select 
+                          value={formData.paymentMethod} 
+                          onValueChange={(value) => setFormData({...formData, paymentMethod: value})}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Payment Method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {paymentMethods.map(method => (
+                              <SelectItem key={method} value={method}>{method}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          type="date"
+                          value={formData.date}
+                          onChange={(e) => setFormData({...formData, date: e.target.value})}
+                          required
+                        />
+                        <Input
+                          placeholder="Receipt Number (Optional)"
+                          value={formData.receiptNumber}
+                          onChange={(e) => setFormData({...formData, receiptNumber: e.target.value})}
+                        />
+                      </div>
+
+                      <Textarea
+                        placeholder="Description"
+                        value={formData.description}
+                        onChange={(e) => setFormData({...formData, description: e.target.value})}
+                      />
+
+                      <div className="flex gap-2">
+                        <Button type="submit">Add Expense</Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => setShowAddForm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Filters
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                  <Select value={timeRange} onValueChange={setTimeRange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Time Range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timeRanges.map(range => (
+                        <SelectItem key={range.value} value={range.value}>{range.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={filterDepartment} onValueChange={setFilterDepartment}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Department" />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Department" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Departments</SelectItem>
@@ -1123,747 +719,572 @@ const ExpenseManagement = () => {
                     </SelectContent>
                   </Select>
                   <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Category" />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Category" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      {categories.map(category => (
-                        <SelectItem key={category} value={category}>{category}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <DateRangePicker 
-                    dateRange={filterDateRange}
-                    onDateRangeChange={setFilterDateRange}
-                  />
-                  <Button onClick={() => exportData('expenses')}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Expenses List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-4 w-4" />
-                  Expenses ({filteredExpenses.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {filteredExpenses.map((expense, index) => (
-                    <motion.div
-                      key={expense.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="border rounded-lg p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold">{expense.title}</h3>
-                            <Badge variant="outline">{expense.department}</Badge>
-                            <Badge className={getStatusColor(expense.approvalStatus || '')}>
-                              {getStatusIcon(expense.approvalStatus || '')}
-                              <span className="ml-1">{expense.approvalStatus}</span>
-                            </Badge>
-                            <Badge className="bg-green-100 text-green-700">
-                              {formatCurrency(parseFloat(expense.amount))}
-                            </Badge>
+                      {expenseCategories.map(cat => (
+                        <SelectItem key={cat.value} value={cat.value}>
+                          <div className="flex items-center">
+                            {cat.icon}
+                            {cat.label}
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600">
-                            <p>Paid to: {expense.paidTo}</p>
-                            <p>Category: {expense.category}</p>
-                            <p>Payment: {expense.paymentMethod}</p>
-                          </div>
-                          <p className="text-sm text-gray-600 mt-2">{expense.description}</p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Date: {new Date(expense.date).toLocaleDateString()}
-                            {expense.isRecurring && (
-                              <span className="ml-2 text-blue-500">• Recurring ({expense.recurrence})</span>
-                            )}
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDelete('expenses', expense.id)}
-                          className="text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ))}
-                  {filteredExpenses.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      No expenses found
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Income Tab */}
-        <TabsContent value="incomes">
-          <div className="space-y-4">
-            {/* Filters */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col md:flex-row gap-4">
-                  <Select value={filterProject} onValueChange={setFilterProject}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Projects</SelectItem>
-                      {projects.map(project => (
-                        <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-full md:w-48">
-                      <SelectValue placeholder="Filter by Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      {incomeStatuses.map(status => (
-                        <SelectItem key={status} value={status}>
-                          {status.split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <DateRangePicker 
-                    dateRange={filterDateRange}
-                    onDateRangeChange={setFilterDateRange}
+                  <Input
+                    placeholder="Search expenses..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                   />
-                  <Button onClick={() => exportData('incomes')}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
+                </div>
+                <Button onClick={generateExpenseReport} className="md:ml-auto">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Expenses List */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Receipt className="h-4 w-4" />
+                Expenses ({filteredExpenses.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {filteredExpenses.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No expenses found matching your criteria
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredExpenses.map((expense) => {
+                        const category = expenseCategories.find(c => c.value === expense.category);
+                        return (
+                          <TableRow key={expense.id}>
+                            <TableCell>{formatDate(expense.date)}</TableCell>
+                            <TableCell>
+                              <div className="font-medium">{expense.title}</div>
+                              <div className="text-sm text-gray-500">{expense.paidTo}</div>
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {formatCurrency(expense.amount)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="flex items-center gap-1">
+                                {category?.icon}
+                                {category?.label || expense.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{expense.department}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDelete('expenses', expense.id)}
+                                className="text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Expense Analysis */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-4 w-4" />
+                Expense Analysis
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {expenseCategories.map(category => {
+                  const total = getCategoryTotal(category.value);
+                  if (total <= 0) return null;
+                  const percentage = (total / getTotalExpenses()) * 100;
+                  
+                  return (
+                    <div key={category.value} className="space-y-1">
+                      <div className="flex justify-between">
+                        <div className="flex items-center gap-2 text-sm">
+                          {category.icon}
+                          <span>{category.label}</span>
+                        </div>
+                        <span className="text-sm font-medium">
+                          {formatCurrency(total)} ({percentage.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <Progress value={percentage} className="h-2" />
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Clients Tab */}
+        <TabsContent value="clients" className="space-y-6">
+          {/* Client Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Clients</p>
+                    <p className="text-lg font-bold">{clients.length}</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-
-            {/* Income List */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wallet className="h-4 w-4" />
-                  Income ({filteredIncomes.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <CircleDollarSign className="h-4 w-4 text-green-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Package Value</p>
+                    <p className="text-lg font-bold">{formatCurrency(
+                      clients.reduce((total, client) => total + parseFloat(client.packageAmount || 0), 0)
+                    )}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-purple-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Received</p>
+                    <p className="text-lg font-bold">{formatCurrency(
+                      clientPayments.reduce((total, payment) => total + parseFloat(payment.amount || 0), 0)
+                    )}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Pending Amount</p>
+                    <p className="text-lg font-bold">{formatCurrency(
+                      clients.reduce((total, client) => {
+                        const paid = getClientTotalPayments(client.id);
+                        return total + (parseFloat(client.packageAmount) - paid);
+                      }, 0)
+                    )}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Add Client Form */}
+          <AnimatePresence>
+            {showClientForm && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>Add New Client</CardTitle>
+                    <CardDescription>Register a new client and their package details</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={handleClientSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Client Name"
+                          value={clientForm.name}
+                          onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
+                          required
+                        />
+                        <Input
+                          placeholder="Contact Number"
+                          value={clientForm.contact}
+                          onChange={(e) => setClientForm({...clientForm, contact: e.target.value})}
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Email Address"
+                          type="email"
+                          value={clientForm.email}
+                          onChange={(e) => setClientForm({...clientForm, email: e.target.value})}
+                        />
+                        <Input
+                          placeholder="Address"
+                          value={clientForm.address}
+                          onChange={(e) => setClientForm({...clientForm, address: e.target.value})}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Package Amount (₹)"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={clientForm.packageAmount}
+                          onChange={(e) => setClientForm({...clientForm, packageAmount: e.target.value})}
+                          required
+                        />
+                        <Select 
+                          value={clientForm.packageType} 
+                          onValueChange={(value) => setClientForm({...clientForm, packageType: value})}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Package Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {packageTypes.map(type => (
+                              <SelectItem key={type} value={type}>
+                                {type.charAt(0).toUpperCase() + type.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          type="date"
+                          value={clientForm.startDate}
+                          onChange={(e) => setClientForm({...clientForm, startDate: e.target.value})}
+                          required
+                        />
+                        <Input
+                          placeholder="Reference/Contract Number (Optional)"
+                          value={clientForm.reference}
+                          onChange={(e) => setClientForm({...clientForm, reference: e.target.value})}
+                        />
+                      </div>
+
+                      <Textarea
+                        placeholder="Description / Services Included"
+                        value={clientForm.description}
+                        onChange={(e) => setClientForm({...clientForm, description: e.target.value})}
+                      />
+
+                      <div className="flex gap-2">
+                        <Button type="submit">Add Client</Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => setShowClientForm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Add Payment Form */}
+          <AnimatePresence>
+            {showPaymentForm && selectedClient && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>Record Payment for {selectedClient.name}</CardTitle>
+                    <CardDescription>
+                      Package: {formatCurrency(selectedClient.packageAmount)} ({selectedClient.packageType}) | 
+                      Paid: {formatCurrency(getClientTotalPayments(selectedClient.id))} | 
+                      Pending: {formatCurrency(getClientPendingAmount(selectedClient))}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={handlePaymentSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          placeholder="Amount (₹)"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={getClientPendingAmount(selectedClient)}
+                          value={paymentForm.amount}
+                          onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
+                          required
+                        />
+                        <Select 
+                          value={paymentForm.paymentMethod} 
+                          onValueChange={(value) => setPaymentForm({...paymentForm, paymentMethod: value})}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Payment Method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {paymentMethods.map(method => (
+                              <SelectItem key={method} value={method}>{method}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          type="date"
+                          value={paymentForm.date}
+                          onChange={(e) => setPaymentForm({...paymentForm, date: e.target.value})}
+                          required
+                        />
+                        <Input
+                          placeholder="Reference/Transaction ID"
+                          value={paymentForm.reference}
+                          onChange={(e) => setPaymentForm({...paymentForm, reference: e.target.value})}
+                        />
+                      </div>
+
+                      <Textarea
+                        placeholder="Description / Notes"
+                        value={paymentForm.description}
+                        onChange={(e) => setPaymentForm({...paymentForm, description: e.target.value})}
+                      />
+
+                      <div className="flex gap-2">
+                        <Button type="submit">Record Payment</Button>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => {
+                            setShowPaymentForm(false);
+                            setSelectedClient(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Clients List */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Clients ({clients.length})
+                  </CardTitle>
+                  <CardDescription>Manage your clients and their payments</CardDescription>
+                </div>
+                <Button onClick={generateClientReport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Clients
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {clients.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No clients found. Add your first client to get started.
+                </div>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
                       <TableHead>Client</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Invoice</TableHead>
+                      <TableHead>Package</TableHead>
+                      <TableHead>Payments</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredIncomes.map((income) => (
-                      <TableRow key={income.id}>
-                        <TableCell>{new Date(income.receivedDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{income.clientName}</TableCell>
-                        <TableCell>
-                          {projects.find(p => p.id === income.projectId)?.name || 'N/A'}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(parseFloat(income.amount), income.currency)}
-                          {income.currency !== 'INR' && (
-                            <span className="text-xs text-gray-500 block">
-                              ≈ {formatCurrency(income.convertedAmount || 0)}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>{income.invoiceNumber || 'N/A'}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(income.status)}>
-                            {getStatusIcon(income.status)}
-                            <span className="ml-1">
-                              {income.status.split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')}
-                            </span>
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDelete('incomes', income.id)}
-                            className="text-red-600 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {filteredIncomes.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No income records found
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Budgets Tab */}
-        <TabsContent value="budgets">
-          <div className="space-y-4">
-            {/* Add Budget Form */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <PieChartIcon className="h-4 w-4" />
-                  Create New Budget
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleBudgetSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                      placeholder="Budget Name"
-                      value={budgetFormData.name}
-                      onChange={(e) => setBudgetFormData({...budgetFormData, name: e.target.value})}
-                      required
-                    />
-                    <Input
-                      placeholder="Amount (₹)"
-                      type="number"
-                      value={budgetFormData.amount}
-                      onChange={(e) => setBudgetFormData({...budgetFormData, amount: e.target.value})}
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select 
-                      value={budgetFormData.category} 
-                      onValueChange={(value) => setBudgetFormData({...budgetFormData, category: value})}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(category => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select 
-                      value={budgetFormData.period} 
-                      onValueChange={(value) => setBudgetFormData({...budgetFormData, period: value})}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Period" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {budgetPeriods.map(period => (
-                          <SelectItem key={period} value={period}>
-                            {period.charAt(0).toUpperCase() + period.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                      type="date"
-                      value={budgetFormData.startDate}
-                      onChange={(e) => setBudgetFormData({...budgetFormData, startDate: e.target.value})}
-                      required
-                    />
-                    {budgetFormData.period === 'custom' && (
-                      <Input
-                        type="date"
-                        value={budgetFormData.endDate}
-                        onChange={(e) => setBudgetFormData({...budgetFormData, endDate: e.target.value})}
-                        required={budgetFormData.period === 'custom'}
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button type="submit">Create Budget</Button>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => exportData('budgets')}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export Budgets
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Budgets List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <PieChartIcon className="h-4 w-4" />
-                  Budgets ({budgets.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Used</TableHead>
-                      <TableHead>Remaining</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {budgets.map((budget) => {
-                      const usedAmount = getTotal(
-                        expenses.filter(exp => exp.category === budget.category),
-                        'amount'
-                      );
-                      const remainingAmount = parseFloat(budget.amount) - usedAmount;
-                      const utilization = (usedAmount / parseFloat(budget.amount)) * 100;
-
+                    {clients.map(client => {
+                      const totalPaid = getClientTotalPayments(client.id);
+                      const pendingAmount = getClientPendingAmount(client);
+                      const paymentPercentage = (totalPaid / parseFloat(client.packageAmount)) * 100;
+                      
                       return (
-                        <TableRow key={budget.id}>
-                          <TableCell>{budget.name}</TableCell>
-                          <TableCell>{budget.category}</TableCell>
+                        <TableRow key={client.id}>
                           <TableCell>
-                            {budget.period.charAt(0).toUpperCase() + budget.period.slice(1)}
-                          </TableCell>
-                          <TableCell>{formatCurrency(parseFloat(budget.amount))}</TableCell>
-                          <TableCell>
-                            {formatCurrency(usedAmount)}
-                            <Progress 
-                              value={utilization} 
-                              className="h-2 mt-1" 
-                              indicatorColor={utilization > 80 ? 'bg-red-500' : utilization > 50 ? 'bg-yellow-500' : 'bg-green-500'}
-                            />
+                            <div className="font-medium">{client.name}</div>
+                            <div className="text-sm text-gray-500">{client.contact}</div>
+                            <div className="text-sm text-gray-500">{client.email}</div>
                           </TableCell>
                           <TableCell>
-                            {formatCurrency(remainingAmount)}
-                            <span className={`text-xs block ${remainingAmount < 0 ? 'text-red-500' : 'text-green-500'}`}>
-                              ({Math.round(utilization)}%)
-                            </span>
+                            <div className="font-medium">{formatCurrency(client.packageAmount)}</div>
+                            <div className="text-sm text-gray-500 capitalize">{client.packageType}</div>
+                            <div className="text-sm text-gray-500">Since {formatDate(client.startDate)}</div>
                           </TableCell>
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDelete('budgets', budget.id)}
-                              className="text-red-600 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Progress value={paymentPercentage} className="h-2 w-24" />
+                              <span className="text-sm">
+                                {paymentPercentage.toFixed(0)}%
+                              </span>
+                            </div>
+                            <div className="text-sm">
+                              Paid: {formatCurrency(totalPaid)}
+                            </div>
+                            <div className={`text-sm ${
+                              pendingAmount > 0 ? 'text-orange-600' : 'text-green-600'
+                            }`}>
+                              {pendingAmount > 0 ? 
+                                `Pending: ${formatCurrency(pendingAmount)}` : 
+                                'Fully Paid'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={pendingAmount > 0 ? 'secondary' : 'default'}>
+                              {pendingAmount > 0 ? 'Pending' : 'Paid'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedClient(client);
+                                  setShowPaymentForm(true);
+                                }}
+                              >
+                                <CircleDollarSign className="h-3 w-3 mr-1" />
+                                Payment
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => generateInvoiceForClient(client)}
+                              >
+                                <FileText className="h-3 w-3 mr-1" />
+                                Invoice
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:bg-red-50"
+                                onClick={() => handleDelete('clients', client.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
-                {budgets.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    No budgets created yet
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Recurring Tab */}
-        <TabsContent value="recurring">
-          <div className="space-y-4">
+          {/* Client Payments */}
+          {selectedClient && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <RotateCw className="h-4 w-4" />
-                  Recurring Expenses ({recurringExpenses.length})
+                  <CircleDollarSign className="h-4 w-4" />
+                  Payment History for {selectedClient.name}
                 </CardTitle>
+                <CardDescription>
+                  Package: {formatCurrency(selectedClient.packageAmount)} ({selectedClient.packageType}) | 
+                  Total Paid: {formatCurrency(getClientTotalPayments(selectedClient.id))} | 
+                  Pending: {formatCurrency(getClientPendingAmount(selectedClient))}
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Frequency</TableHead>
-                      <TableHead>Next Due</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recurringExpenses.map((expense) => (
-                      <TableRow key={expense.id}>
-                        <TableCell>{expense.title}</TableCell>
-                        <TableCell>{formatCurrency(parseFloat(expense.amount))}</TableCell>
-                        <TableCell>
-                          {expense.recurrence?.charAt(0).toUpperCase() + expense.recurrence?.slice(1)}
-                        </TableCell>
-                        <TableCell>
-                          {expense.nextDueDate ? new Date(expense.nextDueDate).toLocaleDateString() : 'N/A'}
-                        </TableCell>
-                        <TableCell>{expense.category}</TableCell>
-                        <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDelete('expenses', expense.id)}
-                            className="text-red-600 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {recurringExpenses.length === 0 && (
+                {clientPayments.filter(p => p.clientId === selectedClient.id).length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    No recurring expenses found
+                    No payments recorded for this client
                   </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {clientPayments
+                        .filter(p => p.clientId === selectedClient.id)
+                        .sort((a, b) => new Date(b.date) - new Date(a.date))
+                        .map(payment => (
+                          <TableRow key={payment.id}>
+                            <TableCell>{formatDate(payment.date)}</TableCell>
+                            <TableCell className="font-medium">
+                              {formatCurrency(payment.amount)}
+                            </TableCell>
+                            <TableCell>{payment.paymentMethod}</TableCell>
+                            <TableCell className="text-sm text-gray-500">
+                              {payment.reference}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:bg-red-50"
+                                onClick={() => handleDelete('clientPayments', payment.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
                 )}
               </CardContent>
             </Card>
-          </div>
+          )}
         </TabsContent>
       </Tabs>
-
-      {/* Add Expense Modal */}
-      {showAddForm && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-        >
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <CardTitle>Add New Expense</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Expense Title"
-                    value={formData.title}
-                    onChange={(e) => setFormData({...formData, title: e.target.value})}
-                    required
-                  />
-                  <Input
-                    placeholder="Amount (₹)"
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Paid To"
-                    value={formData.paidTo}
-                    onChange={(e) => setFormData({...formData, paidTo: e.target.value})}
-                    required
-                  />
-                  <Select 
-                    value={formData.department} 
-                    onValueChange={(value) => setFormData({...formData, department: value})}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {departments.map(dept => (
-                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select 
-                    value={formData.category} 
-                    onValueChange={(value) => setFormData({...formData, category: value})}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map(category => (
-                        <SelectItem key={category} value={category}>{category}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select 
-                    value={formData.paymentMethod} 
-                    onValueChange={(value) => setFormData({...formData, paymentMethod: value})}
-                    required
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Payment Method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {paymentMethods.map(method => (
-                        <SelectItem key={method} value={method}>{method}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Textarea
-                  placeholder="Description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="isRecurring"
-                      checked={formData.isRecurring}
-                      onChange={(e) => setFormData({...formData, isRecurring: e.target.checked})}
-                      className="h-4 w-4"
-                    />
-                    <label htmlFor="isRecurring">Recurring Expense</label>
-                  </div>
-
-                  {formData.isRecurring && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Select 
-                        value={formData.recurrence} 
-                        onValueChange={(value) => setFormData({...formData, recurrence: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Recurrence" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {recurrenceOptions.map(option => (
-                            <SelectItem key={option} value={option}>
-                              {option.charAt(0).toUpperCase() + option.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        type="date"
-                        placeholder="Next Due Date"
-                        value={formData.nextDueDate}
-                        onChange={(e) => setFormData({...formData, nextDueDate: e.target.value})}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="approvalRequired"
-                    checked={formData.approvalRequired}
-                    onChange={(e) => setFormData({...formData, approvalRequired: e.target.checked})}
-                    className="h-4 w-4"
-                  />
-                  <label htmlFor="approvalRequired">Requires Approval</label>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button type="submit">Add Expense</Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowAddForm(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Add Income Modal */}
-      {showAddIncomeForm && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-        >
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <CardTitle>Record New Income</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleIncomeSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Select 
-                    value={incomeFormData.projectId} 
-                    onValueChange={(value) => setIncomeFormData({...incomeFormData, projectId: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map(project => (
-                        <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    placeholder="Client Name"
-                    value={incomeFormData.clientName}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, clientName: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Input
-                    placeholder="Amount"
-                    type="number"
-                    value={incomeFormData.amount}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, amount: e.target.value})}
-                    required
-                  />
-                  <Select 
-                    value={incomeFormData.currency} 
-                    onValueChange={(value) => setIncomeFormData({...incomeFormData, currency: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies.map(currency => (
-                        <SelectItem key={currency} value={currency}>{currency}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {incomeFormData.currency !== 'INR' && (
-                    <Input
-                      placeholder="Exchange Rate"
-                      type="number"
-                      step="0.0001"
-                      value={incomeFormData.exchangeRate}
-                      onChange={(e) => setIncomeFormData({...incomeFormData, exchangeRate: parseFloat(e.target.value)})}
-                      required={incomeFormData.currency !== 'INR'}
-                    />
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    type="date"
-                    value={incomeFormData.receivedDate}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, receivedDate: e.target.value})}
-                    required
-                  />
-                  <Select 
-                    value={incomeFormData.status} 
-                    onValueChange={(value) => setIncomeFormData({...incomeFormData, status: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Payment Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {incomeStatuses.map(status => (
-                        <SelectItem key={status} value={status}>
-                          {status.split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Invoice Number"
-                    value={incomeFormData.invoiceNumber}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, invoiceNumber: e.target.value})}
-                  />
-                  <Input
-                    placeholder="Milestone"
-                    value={incomeFormData.milestone}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, milestone: e.target.value})}
-                  />
-                </div>
-
-                <Textarea
-                  placeholder="Description"
-                  value={incomeFormData.description}
-                  onChange={(e) => setIncomeFormData({...incomeFormData, description: e.target.value})}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Tax Amount"
-                    type="number"
-                    value={incomeFormData.taxAmount}
-                    onChange={(e) => setIncomeFormData({...incomeFormData, taxAmount: e.target.value})}
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Upload Invoice</label>
-                    <Input
-                      type="file"
-                      onChange={(e) => {
-                        if (e.target.files) {
-                          setIncomeFormData({...incomeFormData, invoiceFile: e.target.files[0]});
-                        }
-                      }}
-                      accept=".pdf,.jpg,.png"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button type="submit">Record Income</Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowAddIncomeForm(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
     </div>
   );
 };

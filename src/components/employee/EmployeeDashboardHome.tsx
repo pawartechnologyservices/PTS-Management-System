@@ -1034,25 +1034,7 @@ const EmployeeDashboardHome = () => {
                   </div>
                 </div>
                 
-                <div className="mt-3 sm:mt-0 w-full sm:w-auto">
-                  {upcomingMeetings[0].meetingLink && (
-                    <Button 
-                      size="sm" 
-                      asChild
-                      className="w-full sm:w-auto"
-                    >
-                      <a 
-                        href={upcomingMeetings[0].meetingLink} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center"
-                      >
-                        <Video className="h-4 w-4 mr-2" />
-                        Join Meeting
-                      </a>
-                    </Button>
-                  )}
-                </div>
+            
               </div>
               {upcomingMeetings.length > 1 && (
                 <div className="text-center pt-4">

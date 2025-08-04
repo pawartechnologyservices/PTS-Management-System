@@ -1,6 +1,6 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Plus, Users, Video, Clock, Edit, Trash2 } from 'lucide-react';
+import { Calendar, Plus, Users, Video, Clock, Edit, Trash2, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -8,10 +8,10 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { toast } from 'react-hot-toast';
-import { ref, push, set, onValue, remove, query, orderByChild } from 'firebase/database';
+import { ref, push, set, onValue, remove, query, orderByChild, update } from 'firebase/database';
 import { database } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
-import { format } from 'date-fns';
+import { format, addMinutes, isBefore, differenceInMinutes } from 'date-fns';
 
 const JitsiMeeting = lazy(() => import('@jitsi/react-sdk').then(mod => ({ default: mod.JitsiMeeting })));
 
@@ -32,6 +32,8 @@ interface Meeting {
   employeeId?: string;
   employeeName?: string;
   employeeDepartment?: string;
+  reminded5MinBefore?: boolean;
+  notifiedAtStart?: boolean;
 }
 
 const MeetingManagement = () => {
@@ -40,6 +42,7 @@ const MeetingManagement = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -50,9 +53,20 @@ const MeetingManagement = () => {
     department: '',
     agenda: ''
   });
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const departments = ['Software Development', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', ' Artificial Intelligence'];
 
+  // Request notification permission
+  useEffect(() => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+  }, []);
+
+  // Fetch meetings from Firebase (maintaining your employee-specific structure)
   useEffect(() => {
     if (!user) return;
 
@@ -60,7 +74,7 @@ const MeetingManagement = () => {
       try {
         const employeesRef = ref(database, `users/${user.id}/employees`);
         
-        onValue(employeesRef, (employeesSnapshot) => {
+        const unsubscribe = onValue(employeesRef, (employeesSnapshot) => {
           const allMeetings: Meeting[] = [];
           const meetingPromises: Promise<void>[] = [];
 
@@ -79,15 +93,28 @@ const MeetingManagement = () => {
                   const meetingData = meetingSnapshot.val() as Meeting;
                   
                   allMeetings.push({
-                    id: meetingSnapshot.key,
-                    ...meetingData,
+                    id: meetingSnapshot.key || '',
+                    title: meetingData.title || '',
+                    description: meetingData.description || '',
+                    date: meetingData.date || '',
+                    time: meetingData.time || '',
+                    duration: meetingData.duration || '30',
+                    type: meetingData.type || 'common',
+                    department: meetingData.department || '',
+                    meetingLink: meetingData.meetingLink || '',
+                    agenda: meetingData.agenda || '',
+                    status: meetingData.status || 'scheduled',
+                    createdAt: meetingData.createdAt || '',
+                    createdBy: meetingData.createdBy || '',
                     employeeId,
-                    employeeName: employeeData.name,
-                    employeeDepartment: employeeData.department
+                    employeeName: employeeData.name || '',
+                    employeeDepartment: employeeData.department || '',
+                    reminded5MinBefore: meetingData.reminded5MinBefore || false,
+                    notifiedAtStart: meetingData.notifiedAtStart || false
                   });
                 });
                 resolve();
-              });
+              }, { onlyOnce: true }); // Using onlyOnce to prevent multiple listeners
             });
 
             meetingPromises.push(promise);
@@ -104,6 +131,8 @@ const MeetingManagement = () => {
             setMeetings(uniqueMeetings);
           });
         });
+
+        return unsubscribe;
       } catch (error) {
         console.error('Error fetching meetings:', error);
         toast.error('Failed to load meetings');
@@ -113,14 +142,90 @@ const MeetingManagement = () => {
     fetchMeetings();
   }, [user]);
 
+  // Notification functions
+  const showMeetingNotification = useCallback((meeting: Meeting, message: string) => {
+    if (notificationPermission === 'granted') {
+      new Notification(`Meeting Reminder: ${meeting.title}`, {
+        body: `${message}\nTime: ${meeting.time}\nDuration: ${meeting.duration} minutes`,
+        icon: '/favicon.ico'
+      });
+    }
+
+    toast(
+      <div className="flex items-start gap-3">
+        <Bell className="h-5 w-5 text-blue-500 mt-0.5" />
+        <div>
+          <p className="font-medium">{meeting.title}</p>
+          <p className="text-sm">{message}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {format(new Date(`${meeting.date}T${meeting.time}`), 'MMM d, yyyy h:mm a')} • {meeting.duration} mins
+          </p>
+        </div>
+      </div>,
+      { duration: 10000 }
+    );
+  }, [notificationPermission]);
+
+  const updateMeetingNotificationStatus = useCallback(async (meetingId: string, employeeId: string, field: 'reminded5MinBefore' | 'notifiedAtStart', value: boolean) => {
+    if (!user) return;
+    try {
+      await update(ref(database, `users/${user.id}/employees/${employeeId}/meetings/${meetingId}`), {
+        [field]: value
+      });
+    } catch (error) {
+      console.error('Error updating notification status:', error);
+    }
+  }, [user]);
+
+  // Meeting time checker with optimizations
+  useEffect(() => {
+    if (!user || meetings.length === 0) return;
+
+    const checkMeetingTimes = () => {
+      const now = new Date();
+      
+      meetings.forEach((meeting) => {
+        if (meeting.status !== 'scheduled' || !meeting.employeeId) return;
+
+        const meetingDateTime = new Date(`${meeting.date}T${meeting.time}`);
+        const meetingEndTime = addMinutes(meetingDateTime, parseInt(meeting.duration));
+        const fiveMinutesBefore = addMinutes(meetingDateTime, -5);
+
+        // Check if it's exactly the meeting start time
+        if (isBefore(now, meetingEndTime) && isBefore(meetingDateTime, now)) {
+          if (!meeting.notifiedAtStart) {
+            showMeetingNotification(meeting, 'Meeting is starting now!');
+            updateMeetingNotificationStatus(meeting.id, meeting.employeeId, 'notifiedAtStart', true);
+          }
+        }
+        // Check if it's 5 minutes before the meeting
+        else if (isBefore(now, meetingDateTime) && differenceInMinutes(meetingDateTime, now) <= 5) {
+          if (!meeting.reminded5MinBefore) {
+            showMeetingNotification(meeting, 'Meeting starts in 5 minutes!');
+            updateMeetingNotificationStatus(meeting.id, meeting.employeeId, 'reminded5MinBefore', true);
+          }
+        }
+      });
+    };
+
+    // Check every minute
+    const interval = setInterval(checkMeetingTimes, 60000);
+    // Initial check
+    checkMeetingTimes();
+
+    return () => clearInterval(interval);
+  }, [meetings, user, showMeetingNotification, updateMeetingNotificationStatus]);
+
   const generateMeetingLink = (meetingId: string) => {
     return `hrms-meeting-${meetingId}`;
   };
 
+  // Optimized handleSubmit to prevent freezing
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isProcessing) return;
 
+    setIsProcessing(true);
     try {
       const meetingId = editingMeeting?.id || push(ref(database, 'meetingIds')).key;
       if (!meetingId) throw new Error('Failed to generate meeting ID');
@@ -139,23 +244,34 @@ const MeetingManagement = () => {
         createdAt: new Date().toISOString(),
         status: 'scheduled',
         type: formData.type as 'common' | 'department',
-        department: formData.type === 'department' ? formData.department : 'common'
+        department: formData.type === 'department' ? formData.department : 'common',
+        reminded5MinBefore: false,
+        notifiedAtStart: false
       };
 
+      // Get employees once and process them
       const employeesRef = ref(database, `users/${user.id}/employees`);
-      onValue(employeesRef, (employeesSnapshot) => {
-        employeesSnapshot.forEach((employeeSnapshot) => {
-          const employeeId = employeeSnapshot.key;
-          const employeeData = employeeSnapshot.val();
-          
-          if (formData.type === 'common' || employeeData.department === formData.department) {
-            const employeeMeetingRef = ref(database, 
-              `users/${user.id}/employees/${employeeId}/meetings/${meetingId}`
-            );
-            set(employeeMeetingRef, meetingData);
-          }
-        });
+      const employeesSnapshot = await new Promise(resolve => {
+        onValue(employeesRef, (snapshot) => {
+          resolve(snapshot);
+        }, { onlyOnce: true });
       });
+
+      const updatePromises: Promise<void>[] = [];
+      
+      employeesSnapshot.forEach((employeeSnapshot) => {
+        const employeeId = employeeSnapshot.key;
+        const employeeData = employeeSnapshot.val();
+        
+        if (formData.type === 'common' || employeeData.department === formData.department) {
+          const employeeMeetingRef = ref(database, 
+            `users/${user.id}/employees/${employeeId}/meetings/${meetingId}`
+          );
+          updatePromises.push(set(employeeMeetingRef, meetingData));
+        }
+      });
+
+      await Promise.all(updatePromises);
 
       toast.success(editingMeeting ? 'Meeting updated successfully' : 'Meeting scheduled successfully');
       resetForm();
@@ -164,6 +280,8 @@ const MeetingManagement = () => {
     } catch (error) {
       console.error('Error saving meeting:', error);
       toast.error('Failed to save meeting');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -196,25 +314,34 @@ const MeetingManagement = () => {
   };
 
   const deleteMeeting = async (meeting: Meeting) => {
-    if (!window.confirm('Are you sure you want to delete this meeting?')) return;
-    if (!user) return;
+    if (!window.confirm('Are you sure you want to delete this meeting?') || !user || isProcessing) return;
 
+    setIsProcessing(true);
     try {
       const employeesRef = ref(database, `users/${user.id}/employees`);
-      onValue(employeesRef, (employeesSnapshot) => {
-        employeesSnapshot.forEach((employeeSnapshot) => {
-          const employeeId = employeeSnapshot.key;
-          const employeeMeetingRef = ref(database, 
-            `users/${user.id}/employees/${employeeId}/meetings/${meeting.id}`
-          );
-          remove(employeeMeetingRef);
-        });
+      const employeesSnapshot = await new Promise(resolve => {
+        onValue(employeesRef, (snapshot) => {
+          resolve(snapshot);
+        }, { onlyOnce: true });
       });
 
+      const deletePromises: Promise<void>[] = [];
+      
+      employeesSnapshot.forEach((employeeSnapshot) => {
+        const employeeId = employeeSnapshot.key;
+        const employeeMeetingRef = ref(database, 
+          `users/${user.id}/employees/${employeeId}/meetings/${meeting.id}`
+        );
+        deletePromises.push(remove(employeeMeetingRef));
+      });
+
+      await Promise.all(deletePromises);
       toast.success('Meeting deleted successfully');
     } catch (error) {
       console.error('Error deleting meeting:', error);
       toast.error('Failed to delete meeting');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -235,6 +362,12 @@ const MeetingManagement = () => {
     const meetingDate = new Date(`${meeting.date}T${meeting.time}`);
     const meetingEnd = new Date(meetingDate.getTime() + parseInt(meeting.duration) * 60000);
     return now >= meetingDate && now <= meetingEnd;
+  };
+
+  const isMeetingUpcoming = (meeting: Meeting) => {
+    const now = new Date();
+    const meetingDate = new Date(`${meeting.date}T${meeting.time}`);
+    return now < meetingDate;
   };
 
   return (
@@ -286,10 +419,23 @@ const MeetingManagement = () => {
           <h1 className="text-2xl font-bold text-gray-800">Meeting Management</h1>
           <p className="text-gray-600">Schedule and manage company meetings</p>
         </div>
-        <Button onClick={() => setShowAddForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Schedule Meeting
-        </Button>
+        <div className="flex gap-2">
+          {notificationPermission !== 'granted' && (
+            <Button 
+              variant="outline" 
+              onClick={() => Notification.requestPermission().then(setNotificationPermission)}
+              className="flex items-center gap-1"
+              disabled={isProcessing}
+            >
+              <Bell className="h-4 w-4" />
+              Enable Notifications
+            </Button>
+          )}
+          <Button onClick={() => setShowAddForm(true)} disabled={isProcessing}>
+            <Plus className="h-4 w-4 mr-2" />
+            Schedule Meeting
+          </Button>
+        </div>
       </motion.div>
 
       {showAddForm && (
@@ -312,6 +458,7 @@ const MeetingManagement = () => {
                     value={formData.title}
                     onChange={(e) => setFormData({...formData, title: e.target.value})}
                     required
+                    disabled={isProcessing}
                   />
                   <Select 
                     value={formData.type} 
@@ -321,6 +468,7 @@ const MeetingManagement = () => {
                       department: value === 'common' ? '' : formData.department
                     })}
                     required
+                    disabled={isProcessing}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Meeting Type" />
@@ -337,6 +485,7 @@ const MeetingManagement = () => {
                     value={formData.department} 
                     onValueChange={(value) => setFormData({...formData, department: value})}
                     required
+                    disabled={isProcessing}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Department" />
@@ -354,6 +503,7 @@ const MeetingManagement = () => {
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                   required
+                  disabled={isProcessing}
                 />
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -363,12 +513,14 @@ const MeetingManagement = () => {
                     onChange={(e) => setFormData({...formData, date: e.target.value})}
                     min={format(new Date(), 'yyyy-MM-dd')}
                     required
+                    disabled={isProcessing}
                   />
                   <Input
                     type="time"
                     value={formData.time}
                     onChange={(e) => setFormData({...formData, time: e.target.value})}
                     required
+                    disabled={isProcessing}
                   />
                   <Input
                     placeholder="Duration (minutes)"
@@ -377,6 +529,7 @@ const MeetingManagement = () => {
                     onChange={(e) => setFormData({...formData, duration: e.target.value})}
                     required
                     min="1"
+                    disabled={isProcessing}
                   />
                 </div>
 
@@ -384,11 +537,12 @@ const MeetingManagement = () => {
                   placeholder="Meeting Agenda (optional)"
                   value={formData.agenda}
                   onChange={(e) => setFormData({...formData, agenda: e.target.value})}
+                  disabled={isProcessing}
                 />
 
                 <div className="flex gap-2">
-                  <Button type="submit">
-                    {editingMeeting ? 'Update Meeting' : 'Schedule Meeting'}
+                  <Button type="submit" disabled={isProcessing}>
+                    {isProcessing ? 'Processing...' : editingMeeting ? 'Update Meeting' : 'Schedule Meeting'}
                   </Button>
                   <Button 
                     type="button" 
@@ -398,6 +552,7 @@ const MeetingManagement = () => {
                       setEditingMeeting(null);
                       resetForm();
                     }}
+                    disabled={isProcessing}
                   >
                     Cancel
                   </Button>
@@ -431,6 +586,7 @@ const MeetingManagement = () => {
                   const meetingDate = new Date(`${meeting.date}T${meeting.time}`);
                   const isActive = isMeetingActive(meeting);
                   const isPast = new Date() > new Date(meetingDate.getTime() + parseInt(meeting.duration) * 60000);
+                  const isUpcoming = isMeetingUpcoming(meeting);
 
                   return (
                     <motion.div
@@ -439,6 +595,8 @@ const MeetingManagement = () => {
                       animate={{ opacity: 1, x: 0 }}
                       className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
                         isActive ? 'border-blue-500 bg-blue-50' : ''
+                      } ${isUpcoming ? 'border-green-100' : ''} ${
+                        isPast ? 'border-gray-200 bg-gray-50' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -450,6 +608,9 @@ const MeetingManagement = () => {
                             </Badge>
                             {isActive && (
                               <Badge className="bg-green-100 text-green-700">Live Now</Badge>
+                            )}
+                            {isUpcoming && (
+                              <Badge className="bg-yellow-100 text-yellow-700">Upcoming</Badge>
                             )}
                             {isPast && (
                               <Badge variant="outline">Completed</Badge>
@@ -474,6 +635,18 @@ const MeetingManagement = () => {
                               <Video className="h-3 w-3" />
                               {meeting.meetingLink ? 'Online' : 'In-Person'}
                             </span>
+                            {meeting.reminded5MinBefore && (
+                              <span className="flex items-center gap-1">
+                                <Bell className="h-3 w-3 text-blue-500" />
+                                5-min reminder sent
+                              </span>
+                            )}
+                            {meeting.notifiedAtStart && (
+                              <span className="flex items-center gap-1">
+                                <Bell className="h-3 w-3 text-green-500" />
+                                Start notified
+                              </span>
+                            )}
                           </div>
                           {meeting.agenda && (
                             <div className="mt-2">
@@ -487,6 +660,7 @@ const MeetingManagement = () => {
                             size="sm"
                             variant="outline"
                             onClick={() => editMeeting(meeting)}
+                            disabled={isProcessing}
                           >
                             <Edit className="h-3 w-3 mr-1" />
                             Edit
@@ -496,6 +670,7 @@ const MeetingManagement = () => {
                             variant="outline"
                             onClick={() => deleteMeeting(meeting)}
                             className="text-red-600 hover:bg-red-50"
+                            disabled={isProcessing}
                           >
                             <Trash2 className="h-3 w-3 mr-1" />
                             Delete
@@ -505,6 +680,7 @@ const MeetingManagement = () => {
                               size="sm" 
                               onClick={() => startMeeting(meeting)}
                               className="bg-blue-600 hover:bg-blue-700 text-white"
+                              disabled={isProcessing}
                             >
                               {isActive ? 'Join' : 'Start'} Meeting
                             </Button>

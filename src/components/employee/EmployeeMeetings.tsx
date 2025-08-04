@@ -1,14 +1,14 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Users, Video } from 'lucide-react';
+import { Calendar, Clock, Users, Video, Bell } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../hooks/useAuth';
 import { database } from '../../firebase';
-import { ref, onValue, query, orderByChild } from 'firebase/database';
+import { ref, onValue, query, orderByChild, update } from 'firebase/database';
 import { toast } from 'react-hot-toast';
-import { format, isToday, isTomorrow, parseISO } from 'date-fns';
+import { format, isToday, isTomorrow, parseISO, addMinutes, isBefore, differenceInMinutes } from 'date-fns';
 
 const JitsiMeeting = lazy(() => import('@jitsi/react-sdk').then(mod => ({ default: mod.JitsiMeeting })));
 
@@ -25,6 +25,8 @@ interface Meeting {
   agenda?: string;
   status: 'scheduled' | 'completed' | 'cancelled';
   createdAt: string;
+  reminded5MinBefore?: boolean;
+  notifiedAtStart?: boolean;
 }
 
 const EmployeeMeetings = () => {
@@ -34,7 +36,18 @@ const EmployeeMeetings = () => {
   const [pastMeetings, setPastMeetings] = useState<Meeting[]>([]);
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
+  // Request notification permission
+  useEffect(() => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+  }, []);
+
+  // Fetch meetings from Firebase
   useEffect(() => {
     if (!user?.id || !user?.adminUid) {
       console.error("User ID or Admin UID not available");
@@ -88,6 +101,80 @@ const EmployeeMeetings = () => {
 
     return () => unsubscribe();
   }, [user]);
+
+  // Notification functions
+  const showMeetingNotification = useCallback((meeting: Meeting, message: string) => {
+    if (notificationPermission === 'granted') {
+      new Notification(`Meeting Reminder: ${meeting.title}`, {
+        body: `${message}\nTime: ${meeting.time}\nDuration: ${meeting.duration} minutes`,
+        icon: '/favicon.ico'
+      });
+    }
+
+    toast(
+      <div className="flex items-start gap-3">
+        <Bell className="h-5 w-5 text-blue-500 mt-0.5" />
+        <div>
+          <p className="font-medium">{meeting.title}</p>
+          <p className="text-sm">{message}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {format(parseISO(`${meeting.date}T${meeting.time}`), 'MMM d, yyyy h:mm a')} • {meeting.duration} mins
+          </p>
+        </div>
+      </div>,
+      { duration: 10000 }
+    );
+  }, [notificationPermission]);
+
+  const updateMeetingNotificationStatus = useCallback(async (meetingId: string, field: 'reminded5MinBefore' | 'notifiedAtStart', value: boolean) => {
+    if (!user?.id || !user?.adminUid) return;
+    try {
+      await update(ref(database, `users/${user.adminUid}/employees/${user.id}/meetings/${meetingId}`), {
+        [field]: value
+      });
+    } catch (error) {
+      console.error('Error updating notification status:', error);
+    }
+  }, [user]);
+
+  // Meeting time checker with optimizations
+  useEffect(() => {
+    if (!user || upcomingMeetings.length === 0) return;
+
+    const checkMeetingTimes = () => {
+      const now = new Date();
+      
+      upcomingMeetings.forEach((meeting) => {
+        if (meeting.status !== 'scheduled') return;
+
+        const meetingDateTime = parseISO(`${meeting.date}T${meeting.time}`);
+        const meetingEndTime = addMinutes(meetingDateTime, parseInt(meeting.duration));
+        const fiveMinutesBefore = addMinutes(meetingDateTime, -5);
+
+        // Check if it's exactly the meeting start time
+        if (isBefore(now, meetingEndTime) && isBefore(meetingDateTime, now)) {
+          if (!meeting.notifiedAtStart) {
+            showMeetingNotification(meeting, 'Meeting is starting now!');
+            updateMeetingNotificationStatus(meeting.id, 'notifiedAtStart', true);
+          }
+        }
+        // Check if it's 5 minutes before the meeting
+        else if (isBefore(now, meetingDateTime) && differenceInMinutes(meetingDateTime, now) <= 5) {
+          if (!meeting.reminded5MinBefore) {
+            showMeetingNotification(meeting, 'Meeting starts in 5 minutes!');
+            updateMeetingNotificationStatus(meeting.id, 'reminded5MinBefore', true);
+          }
+        }
+      });
+    };
+
+    // Check every minute
+    const interval = setInterval(checkMeetingTimes, 60000);
+    // Initial check
+    checkMeetingTimes();
+
+    return () => clearInterval(interval);
+  }, [upcomingMeetings, user, showMeetingNotification, updateMeetingNotificationStatus]);
 
   const handleJitsiClose = () => {
     setActiveMeeting(null);
@@ -173,6 +260,16 @@ const EmployeeMeetings = () => {
           <h1 className="text-2xl font-bold text-gray-800">My Meetings</h1>
           <p className="text-gray-600">View your scheduled meetings and events</p>
         </div>
+        {notificationPermission !== 'granted' && (
+          <Button 
+            variant="outline" 
+            onClick={() => Notification.requestPermission().then(setNotificationPermission)}
+            className="flex items-center gap-1"
+          >
+            <Bell className="h-4 w-4" />
+            Enable Notifications
+          </Button>
+        )}
       </motion.div>
 
       {/* Quick Stats */}
@@ -282,6 +379,9 @@ const EmployeeMeetings = () => {
                           )}
                           {isActive && (
                             <Badge className="bg-green-100 text-green-700">Live Now</Badge>
+                          )}
+                          {meeting.reminded5MinBefore && (
+                            <Badge className="bg-blue-100 text-blue-700">Reminder Sent</Badge>
                           )}
                         </div>
                         
