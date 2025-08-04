@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
-import { Eye, Edit, Trash2, Mail, Phone, User } from 'lucide-react';
+import { Eye, Edit, Trash2, Mail, Phone, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ref, onValue, off, update, remove } from 'firebase/database';
 import { database } from '../../../firebase';
 import { useAuth } from '../../../hooks/useAuth';
@@ -39,13 +39,25 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(() => 
+    window.innerWidth < 768 ? 5 : 10
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [departments, setDepartments] = useState<string[]>([]);
+
+  // Handle window resize for responsive items per page
+  useEffect(() => {
+    const handleResize = () => {
+      setItemsPerPage(window.innerWidth < 768 ? 5 : 10);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Fetch employees from Firebase
   useEffect(() => {
@@ -217,7 +229,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
   if (loading) {
     return (
-      <Card>
+      <Card className="mx-2 sm:mx-0">
         <CardHeader>
           <CardTitle>Loading employees...</CardTitle>
         </CardHeader>
@@ -230,7 +242,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
   if (error) {
     return (
-      <Card>
+      <Card className="mx-2 sm:mx-0">
         <CardHeader>
           <CardTitle>Error</CardTitle>
         </CardHeader>
@@ -242,7 +254,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 mx-2 sm:mx-0">
       {/* Filters Component */}
       <EmployeeFilters
         searchTerm={searchTerm}
@@ -257,11 +269,11 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       {/* Employee List */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <CardTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <span>Employees ({filteredEmployees.length})</span>
             </div>
-            <Badge variant="outline">
+            <Badge variant="outline" className="self-start sm:self-auto">
               {filteredEmployees.filter(e => e.isActive).length} Active
             </Badge>
           </CardTitle>
@@ -279,47 +291,51 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-4 sm:gap-0"
                 >
-                  <div className="flex items-center gap-4">
-                    <Avatar className="w-12 h-12">
+                  <div className="flex items-center gap-4 w-full sm:w-auto">
+                    <Avatar className="w-10 h-10 sm:w-12 sm:h-12">
                       <AvatarImage src={employee.profileImage} />
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-xs sm:text-sm">
                         {employee.name?.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{employee.name}</h3>
-                        <Badge variant={employee.isActive ? "default" : "secondary"}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <h3 className="font-semibold truncate">{employee.name}</h3>
+                        <Badge 
+                          variant={employee.isActive ? "default" : "secondary"}
+                          className="w-fit"
+                        >
                           {employee.isActive ? "Active" : "Inactive"}
                         </Badge>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {employee.email}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-gray-600 mt-1">
+                        <span className="flex items-center gap-1 truncate">
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{employee.email}</span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Phone className="w-3 h-3" />
-                          {employee.phone}
+                        <span className="flex items-center gap-1 truncate">
+                          <Phone className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{employee.phone}</span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          {employee.employeeId}
+                        <span className="flex items-center gap-1 truncate">
+                          <User className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{employee.employeeId}</span>
                         </span>
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-gray-500 truncate">
                         {employee.designation} • {employee.department}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-end sm:justify-normal gap-1 sm:gap-2 w-full sm:w-auto">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => onViewEmployee(employee)}
-                      className="hover:bg-blue-50 hover:text-blue-600"
+                      className="hover:bg-blue-50 hover:text-blue-600 h-8 w-8 sm:h-10 sm:w-10"
+                      aria-label="View employee"
                     >
                       <Eye className="w-4 h-4" />
                     </Button>
@@ -327,27 +343,32 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                       variant="ghost"
                       size="icon"
                       onClick={() => onEditEmployee(employee)}
-                      className="hover:bg-green-50 hover:text-green-600"
+                      className="hover:bg-green-50 hover:text-green-600 h-8 w-8 sm:h-10 sm:w-10"
+                      aria-label="Edit employee"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="sm"
                       onClick={() => handleToggleStatus(employee.id)}
-                      className={`hover:bg-${employee.isActive ? 'yellow' : 'green'}-50 hover:text-${employee.isActive ? 'yellow' : 'green'}-600`}
+                      className={`h-8 px-2 sm:h-10 sm:px-4 ${
+                        employee.isActive 
+                          ? 'hover:bg-yellow-50 hover:text-yellow-600' 
+                          : 'hover:bg-green-50 hover:text-green-600'
+                      }`}
+                      aria-label={employee.isActive ? "Deactivate employee" : "Activate employee"}
                     >
-                      {employee.isActive ? (
-                        <span className="text-xs">Deactivate</span>
-                      ) : (
-                        <span className="text-xs">Activate</span>
-                      )}
+                      <span className="text-xs sm:text-sm">
+                        {employee.isActive ? 'Deactivate' : 'Activate'}
+                      </span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDeleteEmployee(employee.id)}
-                      className="hover:bg-red-50 hover:text-red-600"
+                      className="hover:bg-red-50 hover:text-red-600 h-8 w-8 sm:h-10 sm:w-10"
+                      aria-label="Delete employee"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -357,8 +378,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6">
-                  <p className="text-sm text-gray-600">
+                <div className="flex flex-col sm:flex-row items-center justify-between mt-6 gap-4">
+                  <p className="text-sm text-gray-600 text-center sm:text-left">
                     Showing {indexOfFirstEmployee + 1} to {Math.min(indexOfLastEmployee, filteredEmployees.length)} of {filteredEmployees.length} employees
                   </p>
                   <div className="flex items-center gap-2">
@@ -367,28 +388,52 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                       size="sm"
                       onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
+                      className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
                     >
-                      Previous
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="sr-only sm:not-sr-only sm:ml-2">Previous</span>
                     </Button>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: totalPages }, (_, i) => (
-                        <Button
-                          key={i + 1}
-                          variant={currentPage === i + 1 ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(i + 1)}
-                        >
-                          {i + 1}
-                        </Button>
-                      ))}
+                    <div className="flex items-center gap-1 overflow-x-auto max-w-[200px] sm:max-w-none">
+                      {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                        // Show first, last and nearby pages for mobile
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(pageNum)}
+                            className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {totalPages > 5 && (
+                        <span className="px-2 text-sm text-gray-500 hidden sm:inline">
+                          ...
+                        </span>
+                      )}
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setCurrentPage(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
+                      className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
                     >
-                      Next
+                      <span className="sr-only sm:not-sr-only sm:mr-2">Next</span>
+                      <ChevronRight className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>

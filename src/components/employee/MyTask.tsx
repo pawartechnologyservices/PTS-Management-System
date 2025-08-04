@@ -138,30 +138,30 @@ const MyTasks: React.FC = () => {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+      <div className="flex flex-col items-center justify-center h-64 space-y-4 px-4">
         <AlertCircle className="h-12 w-12 text-gray-400" />
-        <p className="text-lg text-gray-600">{error}</p>
+        <p className="text-lg text-gray-600 text-center">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 sm:px-6">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">My Daily Tasks</h1>
-          <p className="text-gray-600">View your assigned tasks</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">My Daily Tasks</h1>
+          <p className="text-sm sm:text-base text-gray-600">View your assigned tasks</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           <Select
             value={filterStatus}
             onValueChange={setFilterStatus}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -171,13 +171,13 @@ const MyTasks: React.FC = () => {
               <SelectItem value="completed">Completed</SelectItem>
             </SelectContent>
           </Select>
-          <div className="relative">
+          <div className="relative w-full sm:w-[180px]">
             <Input
               type="date"
               value={filterDate}
               onChange={(e) => setFilterDate(e.target.value)}
               placeholder="Filter by date"
-              className="w-[180px]"
+              className="w-full"
             />
             {filterDate && (
               <button
@@ -188,29 +188,35 @@ const MyTasks: React.FC = () => {
               </button>
             )}
           </div>
-          <Button
-            variant={viewMode === 'table' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setViewMode('table')}
-          >
-            Table View
-          </Button>
-          <Button
-            variant={viewMode === 'card' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setViewMode('card')}
-          >
-            Card View
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className="flex-1 sm:w-auto"
+            >
+              <span className="hidden sm:inline">Table</span>
+              <span className="sm:hidden">Table View</span>
+            </Button>
+            <Button
+              variant={viewMode === 'card' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setViewMode('card')}
+              className="flex-1 sm:w-auto"
+            >
+              <span className="hidden sm:inline">Card</span>
+              <span className="sm:hidden">Card View</span>
+            </Button>
+          </div>
         </div>
       </motion.div>
 
       {tasks.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
+          <CardContent className="flex flex-col items-center justify-center py-12 px-4">
             <CheckCircle className="h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900">No tasks assigned</h3>
-            <p className="text-gray-500 mt-1">
+            <h3 className="text-lg font-medium text-gray-900 text-center">No tasks assigned</h3>
+            <p className="text-gray-500 mt-1 text-center">
               You don't have any tasks assigned to you yet
             </p>
           </CardContent>
@@ -220,33 +226,36 @@ const MyTasks: React.FC = () => {
           <CardHeader>
             <CardTitle>Task List</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Table>
+          <CardContent className="overflow-x-auto">
+            <Table className="min-w-full">
               <TableCaption>A list of your assigned daily tasks</TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Assigned By</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="whitespace-nowrap">Date</TableHead>
+                  <TableHead className="whitespace-nowrap">Task</TableHead>
+                  <TableHead className="hidden sm:table-cell">Description</TableHead>
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Assigned By</TableHead>
+                  <TableHead className="whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell className="font-medium">
-                      {formatDate(task.date)} at {task.time}
+                      <div className="flex flex-col">
+                        <span>{formatDate(task.date)}</span>
+                        <span className="text-xs text-gray-500">{task.time}</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate">{task.task}</TableCell>
-                    <TableCell className="max-w-[300px] truncate">{task.description}</TableCell>
+                    <TableCell className="max-w-[150px] truncate">{task.task}</TableCell>
+                    <TableCell className="hidden sm:table-cell max-w-[200px] truncate">{task.description}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(task.status)}>
                         {task.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       {task.assignedBy || 'Admin'}
                     </TableCell>
                     <TableCell>
@@ -254,9 +263,10 @@ const MyTasks: React.FC = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => setSelectedTask(task)}
+                        className="w-full sm:w-auto"
                       >
-                        <Eye className="h-4 w-4 mr-2" />
-                        View
+                        <Eye className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">View</span>
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -266,7 +276,7 @@ const MyTasks: React.FC = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTasks.map((task) => (
             <motion.div
               key={task.id}
@@ -274,16 +284,17 @@ const MyTasks: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.02 }}
               transition={{ duration: 0.2 }}
+              className="w-full"
             >
-              <Card>
+              <Card className="h-full">
                 <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle>{task.task}</CardTitle>
-                    <Badge className={getStatusBadge(task.status)}>
+                  <div className="flex justify-between items-start gap-2">
+                    <CardTitle className="text-base line-clamp-2">{task.task}</CardTitle>
+                    <Badge className={`whitespace-nowrap ${getStatusBadge(task.status)}`}>
                       {task.status}
                     </Badge>
                   </div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-xs sm:text-sm text-gray-500">
                     Assigned on {formatDate(task.createdAt)} by {task.assignedBy || 'Admin'}
                   </div>
                 </CardHeader>
@@ -291,32 +302,36 @@ const MyTasks: React.FC = () => {
                   <div className="space-y-4">
                     <div>
                       <Label>Description</Label>
-                      <p className="text-sm text-gray-700 mt-1">{task.description}</p>
+                      <p className="text-sm text-gray-700 mt-1 line-clamp-3">{task.description}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label>Due Date</Label>
                         <p className="text-sm">
-                          {formatDate(task.date)} at {task.time}
+                          {formatDate(task.date)}
+                          <span className="block text-xs text-gray-500">{task.time}</span>
                         </p>
                       </div>
                       <div>
                         <Label>Department</Label>
-                        <p className="text-sm">{task.department}</p>
+                        <p className="text-sm truncate">{task.department}</p>
                       </div>
                     </div>
                     {task.comments && task.comments.length > 0 && (
                       <div>
                         <Label>Comments ({task.comments.length})</Label>
-                        <div className="space-y-2 mt-2">
-                          {task.comments.map((comment, index) => (
+                        <div className="space-y-2 mt-2 max-h-20 overflow-y-auto">
+                          {task.comments.slice(0, 2).map((comment, index) => (
                             <div key={index} className="border-l-2 pl-2 border-gray-200">
-                              <p className="text-sm">{comment.text}</p>
+                              <p className="text-sm line-clamp-2">{comment.text}</p>
                               <p className="text-xs text-gray-500">
                                 {formatDate(comment.createdAt)} by {comment.createdBy}
                               </p>
                             </div>
                           ))}
+                          {task.comments.length > 2 && (
+                            <p className="text-xs text-gray-500">+{task.comments.length - 2} more comments</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -326,9 +341,11 @@ const MyTasks: React.FC = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => setSelectedTask(task)}
+                      className="w-full sm:w-auto"
                     >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Details
+                      <Eye className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">View Details</span>
+                      <span className="sm:hidden">Details</span>
                     </Button>
                   </div>
                 </CardContent>
@@ -346,13 +363,13 @@ const MyTasks: React.FC = () => {
             className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
           >
             <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">Task Details: {selectedTask.task}</h3>
-              <Button variant="ghost" onClick={() => setSelectedTask(null)}>
+              <h3 className="text-lg font-semibold line-clamp-1">Task Details: {selectedTask.task}</h3>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedTask(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="overflow-y-auto p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="overflow-y-auto p-4 sm:p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div className="space-y-2">
                   <Label className="text-gray-500">Task Title</Label>
                   <p className="font-medium">{selectedTask.task}</p>
@@ -397,7 +414,7 @@ const MyTasks: React.FC = () => {
               {selectedTask.comments && selectedTask.comments.length > 0 && (
                 <div className="space-y-4">
                   <Label className="text-gray-500">Comments ({selectedTask.comments.length})</Label>
-                  <div className="space-y-3">
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
                     {selectedTask.comments.map((comment, index) => (
                       <div key={index} className="p-3 bg-gray-50 rounded-md border-l-4 border-gray-300">
                         <p className="text-sm text-gray-700">{comment.text}</p>
@@ -413,6 +430,7 @@ const MyTasks: React.FC = () => {
               <div className="flex justify-end pt-4">
                 <Button
                   onClick={() => setSelectedTask(null)}
+                  className="w-full sm:w-auto"
                 >
                   Close
                 </Button>

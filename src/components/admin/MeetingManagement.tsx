@@ -371,13 +371,13 @@ const MeetingManagement = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-2 sm:px-4">
       {activeMeeting && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4">
           <div className="bg-white rounded-lg w-full max-w-6xl h-[90vh] overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b">
+            <div className="flex justify-between items-center p-3 sm:p-4 border-b">
               <h3 className="text-lg font-semibold">{activeMeeting.title}</h3>
-              <Button variant="outline" onClick={handleJitsiClose}>
+              <Button variant="outline" onClick={handleJitsiClose} size="sm" className="text-xs sm:text-sm">
                 Close Meeting
               </Button>
             </div>
@@ -413,27 +413,33 @@ const MeetingManagement = () => {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Meeting Management</h1>
-          <p className="text-gray-600">Schedule and manage company meetings</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Meeting Management</h1>
+          <p className="text-sm sm:text-base text-gray-600">Schedule and manage company meetings</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {notificationPermission !== 'granted' && (
             <Button 
               variant="outline" 
               onClick={() => Notification.requestPermission().then(setNotificationPermission)}
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 text-xs sm:text-sm"
               disabled={isProcessing}
+              size="sm"
             >
-              <Bell className="h-4 w-4" />
-              Enable Notifications
+              <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="truncate">Enable Notifications</span>
             </Button>
           )}
-          <Button onClick={() => setShowAddForm(true)} disabled={isProcessing}>
-            <Plus className="h-4 w-4 mr-2" />
-            Schedule Meeting
+          <Button 
+            onClick={() => setShowAddForm(true)} 
+            disabled={isProcessing}
+            size="sm"
+            className="text-xs sm:text-sm"
+          >
+            <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+            <span className="truncate">Schedule Meeting</span>
           </Button>
         </div>
       </motion.div>
@@ -446,7 +452,7 @@ const MeetingManagement = () => {
         >
           <Card>
             <CardHeader>
-              <CardTitle>
+              <CardTitle className="text-lg sm:text-xl">
                 {editingMeeting ? 'Edit Meeting' : 'Schedule New Meeting'}
               </CardTitle>
             </CardHeader>
@@ -459,6 +465,7 @@ const MeetingManagement = () => {
                     onChange={(e) => setFormData({...formData, title: e.target.value})}
                     required
                     disabled={isProcessing}
+                    className="text-xs sm:text-sm"
                   />
                   <Select 
                     value={formData.type} 
@@ -470,12 +477,12 @@ const MeetingManagement = () => {
                     required
                     disabled={isProcessing}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="text-xs sm:text-sm">
                       <SelectValue placeholder="Meeting Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="common">Common Meeting</SelectItem>
-                      <SelectItem value="department">Department Meeting</SelectItem>
+                      <SelectItem value="common" className="text-xs sm:text-sm">Common Meeting</SelectItem>
+                      <SelectItem value="department" className="text-xs sm:text-sm">Department Meeting</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -487,12 +494,12 @@ const MeetingManagement = () => {
                     required
                     disabled={isProcessing}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="text-xs sm:text-sm">
                       <SelectValue placeholder="Select Department" />
                     </SelectTrigger>
                     <SelectContent>
                       {departments.map(dept => (
-                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                        <SelectItem key={dept} value={dept} className="text-xs sm:text-sm">{dept}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -504,9 +511,10 @@ const MeetingManagement = () => {
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                   required
                   disabled={isProcessing}
+                  className="text-xs sm:text-sm"
                 />
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Input
                     type="date"
                     value={formData.date}
@@ -514,6 +522,7 @@ const MeetingManagement = () => {
                     min={format(new Date(), 'yyyy-MM-dd')}
                     required
                     disabled={isProcessing}
+                    className="text-xs sm:text-sm"
                   />
                   <Input
                     type="time"
@@ -521,6 +530,7 @@ const MeetingManagement = () => {
                     onChange={(e) => setFormData({...formData, time: e.target.value})}
                     required
                     disabled={isProcessing}
+                    className="text-xs sm:text-sm"
                   />
                   <Input
                     placeholder="Duration (minutes)"
@@ -530,6 +540,7 @@ const MeetingManagement = () => {
                     required
                     min="1"
                     disabled={isProcessing}
+                    className="text-xs sm:text-sm"
                   />
                 </div>
 
@@ -538,10 +549,15 @@ const MeetingManagement = () => {
                   value={formData.agenda}
                   onChange={(e) => setFormData({...formData, agenda: e.target.value})}
                   disabled={isProcessing}
+                  className="text-xs sm:text-sm"
                 />
 
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={isProcessing}>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button 
+                    type="submit" 
+                    disabled={isProcessing}
+                    className="text-xs sm:text-sm"
+                  >
                     {isProcessing ? 'Processing...' : editingMeeting ? 'Update Meeting' : 'Schedule Meeting'}
                   </Button>
                   <Button 
@@ -553,6 +569,7 @@ const MeetingManagement = () => {
                       resetForm();
                     }}
                     disabled={isProcessing}
+                    className="text-xs sm:text-sm"
                   >
                     Cancel
                   </Button>
@@ -570,9 +587,9 @@ const MeetingManagement = () => {
       >
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
               <Calendar className="h-4 w-4" />
-              Scheduled Meetings ({meetings.length})
+              <span className="truncate">Scheduled Meetings ({meetings.length})</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -593,31 +610,31 @@ const MeetingManagement = () => {
                       key={meeting.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                      className={`border rounded-lg p-3 sm:p-4 hover:shadow-md transition-shadow ${
                         isActive ? 'border-blue-500 bg-blue-50' : ''
                       } ${isUpcoming ? 'border-green-100' : ''} ${
                         isPast ? 'border-gray-200 bg-gray-50' : ''
                       }`}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold">{meeting.title}</h3>
-                            <Badge className={getTypeColor(meeting.type)}>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <h3 className="font-semibold text-sm sm:text-base truncate">{meeting.title}</h3>
+                            <Badge className={`text-xs ${getTypeColor(meeting.type)}`}>
                               {meeting.type === 'common' ? 'Common' : meeting.department}
                             </Badge>
                             {isActive && (
-                              <Badge className="bg-green-100 text-green-700">Live Now</Badge>
+                              <Badge className="bg-green-100 text-green-700 text-xs">Live Now</Badge>
                             )}
                             {isUpcoming && (
-                              <Badge className="bg-yellow-100 text-yellow-700">Upcoming</Badge>
+                              <Badge className="bg-yellow-100 text-yellow-700 text-xs">Upcoming</Badge>
                             )}
                             {isPast && (
-                              <Badge variant="outline">Completed</Badge>
+                              <Badge variant="outline" className="text-xs">Completed</Badge>
                             )}
                           </div>
-                          <p className="text-gray-600 mb-2">{meeting.description}</p>
-                          <div className="flex items-center gap-4 text-sm text-gray-500">
+                          <p className="text-gray-600 text-xs sm:text-sm mb-2">{meeting.description}</p>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2 text-xs sm:text-sm text-gray-500">
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               {meetingDate.toLocaleDateString('en-US', { 
@@ -650,17 +667,18 @@ const MeetingManagement = () => {
                           </div>
                           {meeting.agenda && (
                             <div className="mt-2">
-                              <p className="text-sm font-medium">Agenda:</p>
-                              <p className="text-sm text-gray-600">{meeting.agenda}</p>
+                              <p className="text-xs sm:text-sm font-medium">Agenda:</p>
+                              <p className="text-xs sm:text-sm text-gray-600">{meeting.agenda}</p>
                             </div>
                           )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => editMeeting(meeting)}
                             disabled={isProcessing}
+                            className="text-xs"
                           >
                             <Edit className="h-3 w-3 mr-1" />
                             Edit
@@ -669,7 +687,7 @@ const MeetingManagement = () => {
                             size="sm"
                             variant="outline"
                             onClick={() => deleteMeeting(meeting)}
-                            className="text-red-600 hover:bg-red-50"
+                            className="text-red-600 hover:bg-red-50 text-xs"
                             disabled={isProcessing}
                           >
                             <Trash2 className="h-3 w-3 mr-1" />
@@ -679,7 +697,7 @@ const MeetingManagement = () => {
                             <Button 
                               size="sm" 
                               onClick={() => startMeeting(meeting)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
                               disabled={isProcessing}
                             >
                               {isActive ? 'Join' : 'Start'} Meeting
