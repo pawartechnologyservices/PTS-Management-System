@@ -154,13 +154,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   ): Promise<{ success: boolean; message?: string }> => {
     setLoading(true);
     try {
-      // First check if employee exists in database if role is employee
+      // First check if user exists in database
       if (role === 'employee') {
-        const employeeExists = await checkEmployeeExists(email);
-        if (!employeeExists) {
+        const employeeCheck = await checkEmployeeStatus(email);
+        if (!employeeCheck.exists) {
           return { 
             success: false, 
             message: 'Employee account not found or has been deleted' 
+          };
+        }
+        if (employeeCheck.status === 'inactive') {
+          return {
+            success: false,
+            message: 'Your account is inactive. Please contact your administrator.'
           };
         }
       }
@@ -192,10 +198,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         message = 'Incorrect password';
       } else if (error.code === 'auth/invalid-email') {
         message = 'Invalid email address';
+      } else if (error.code === 'auth/too-many-requests') {
+        message = 'Too many attempts. Account temporarily locked.';
       }
       return { success: false, message };
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkEmployeeStatus = async (email: string): Promise<{exists: boolean, status?: string}> => {
+    try {
+      const employeesRef = ref(database, 'users');
+      const snapshot = await get(employeesRef);
+
+      if (snapshot.exists()) {
+        let result = {exists: false, status: undefined};
+        
+        snapshot.forEach((adminSnapshot) => {
+          const employees = adminSnapshot.child('employees').val();
+          if (employees) {
+            Object.values(employees).forEach((emp: any) => {
+              if (emp.email === email) {
+                result = {
+                  exists: true,
+                  status: emp.status || 'active' // Default to active if status not set
+                };
+              }
+            });
+          }
+        });
+        
+        return result;
+      }
+      return {exists: false};
+    } catch (error) {
+      console.error('Error checking employee status:', error);
+      return {exists: false};
     }
   };
 
@@ -232,34 +271,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return { success: false, message };
     } finally {
       setLoading(false);
-    }
-  };
-
-  const checkEmployeeExists = async (email: string): Promise<boolean> => {
-    try {
-      const employeesRef = ref(database, 'users');
-      const snapshot = await get(employeesRef);
-
-      if (snapshot.exists()) {
-        let exists = false;
-        
-        snapshot.forEach((adminSnapshot) => {
-          const employees = adminSnapshot.child('employees').val();
-          if (employees) {
-            Object.values(employees).forEach((emp: any) => {
-              if (emp.email === email) {
-                exists = true;
-              }
-            });
-          }
-        });
-        
-        return exists;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error checking employee existence:', error);
-      return false;
     }
   };
 

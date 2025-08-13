@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Clock, Check, X, AlertTriangle, FileText, Calendar, User, Link, Edit, Trash2, Filter } from 'lucide-react';
+import { Plus, Clock, Check, X, AlertTriangle, FileText, Calendar, User, Link, Edit, Trash2, Filter, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -14,6 +14,7 @@ import { ref, onValue, push, set, remove, update } from 'firebase/database';
 import { toast } from '../../ui/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { Calendar as CalendarComp } from '../../ui/calendar';
+import { Label } from '@/components/ui/label';
 
 interface Task {
   id: string;
@@ -297,23 +298,23 @@ const DailyTask = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 sm:px-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              Daily Tasks
+              <span className="text-lg sm:text-xl">Daily Tasks</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <Popover open={isDateFilterOpen} onOpenChange={setIsDateFilterOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline">
+                  <Button variant="outline" className="w-full sm:w-[180px] justify-start">
                     <Filter className="h-4 w-4 mr-2" />
                     {dateFilter ? new Date(dateFilter).toLocaleDateString() : 'Filter by Date'}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
+                <PopoverContent className="w-auto p-0" align="start">
                   <CalendarComp
                     mode="single"
                     selected={dateFilter}
@@ -337,65 +338,87 @@ const DailyTask = () => {
                   )}
                 </PopoverContent>
               </Popover>
-              <Button onClick={() => {
-                resetForm();
-                setIsFormOpen(true);
-              }}>
+              <Button 
+                onClick={() => {
+                  resetForm();
+                  setIsFormOpen(true);
+                }}
+                className="w-full sm:w-auto"
+              >
                 <Plus className="h-4 w-4 mr-2" />
-                Add Task
+                <span>Add Task</span>
               </Button>
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
+        <CardContent className="overflow-x-auto">
+          <Table className="min-w-full">
             <TableCaption>A list of your daily tasks.</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Task Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Assigned By</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className="whitespace-nowrap">Date</TableHead>
+                <TableHead className="whitespace-nowrap">Task Title</TableHead>
+                <TableHead className="hidden sm:table-cell">Type</TableHead>
+                <TableHead className="whitespace-nowrap">Priority</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="hidden md:table-cell">Duration</TableHead>
+                <TableHead className="hidden md:table-cell">Assigned By</TableHead>
+                <TableHead className="whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredTasks.length > 0 ? (
                 filteredTasks.map(task => (
                   <TableRow key={task.id}>
-                    <TableCell>{new Date(task.date).toLocaleDateString()}</TableCell>
-                    <TableCell className="font-medium">{task.taskTitle}</TableCell>
-                    <TableCell>{task.taskType}</TableCell>
-                    <TableCell>{getPriorityBadge(task.priority)}</TableCell>
-                    <TableCell>{getStatusBadge(task.status)}</TableCell>
-                    <TableCell>{task.totalDuration}</TableCell>
-                    <TableCell>{task.assignedBy}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {new Date(task.date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="font-medium max-w-[150px] truncate">
+                      {task.taskTitle}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      {task.taskType}
+                    </TableCell>
+                    <TableCell>
+                      {getPriorityBadge(task.priority)}
+                    </TableCell>
+                    <TableCell>
+                      {getStatusBadge(task.status)}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {task.totalDuration}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {task.assignedBy}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button 
                           variant="ghost" 
                           size="sm"
                           onClick={() => handleViewTask(task)}
+                          className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-3"
                         >
-                          View
+                          <Eye className="h-4 w-4" />
+                          <span className="sr-only sm:not-sr-only sm:ml-2">View</span>
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="sm"
                           onClick={() => handleEditTask(task)}
+                          className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-3"
                         >
                           <Edit className="h-4 w-4" />
+                          <span className="sr-only sm:not-sr-only sm:ml-2">Edit</span>
                         </Button>
                         <Button 
                           variant="ghost" 
                           size="sm"
                           onClick={() => handleDeleteTask(task.id)}
-                          className="text-red-600 hover:text-red-800"
+                          className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-3 text-red-600 hover:text-red-800"
                         >
                           <Trash2 className="h-4 w-4" />
+                          <span className="sr-only sm:not-sr-only sm:ml-2">Delete</span>
                         </Button>
                       </div>
                     </TableCell>
@@ -419,14 +442,17 @@ const DailyTask = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">{isEditing ? 'Edit Task' : 'Add New Task'}</h2>
-              <button onClick={() => {
-                setIsFormOpen(false);
-                resetForm();
-              }} className="text-gray-500 hover:text-gray-700">
+              <h2 className="text-lg sm:text-xl font-bold">{isEditing ? 'Edit Task' : 'Add New Task'}</h2>
+              <button 
+                onClick={() => {
+                  setIsFormOpen(false);
+                  resetForm();
+                }} 
+                className="text-gray-500 hover:text-gray-700"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -434,7 +460,7 @@ const DailyTask = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Date</label>
+                  <Label>Date</Label>
                   <Input
                     type="date"
                     name="date"
@@ -445,7 +471,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Employee Name</label>
+                  <Label>Employee Name</Label>
                   <Input
                     name="employeeName"
                     value={currentTask.employeeName || ''}
@@ -456,7 +482,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Employee ID</label>
+                  <Label>Employee ID</Label>
                   <Input
                     name="employeeId"
                     value={currentTask.employeeId || ''}
@@ -467,7 +493,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Department</label>
+                  <Label>Department</Label>
                   <Input
                     name="department"
                     value={currentTask.department || ''}
@@ -478,7 +504,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Designation</label>
+                  <Label>Designation</Label>
                   <Input
                     name="designation"
                     value={currentTask.designation || ''}
@@ -489,7 +515,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Task Title</label>
+                  <Label>Task Title</Label>
                   <Input
                     name="taskTitle"
                     value={currentTask.taskTitle || ''}
@@ -499,7 +525,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Task Type</label>
+                  <Label>Task Type</Label>
                   <Select
                     value={currentTask.taskType || ''}
                     onValueChange={(value) => handleSelectChange('taskType', value)}
@@ -520,7 +546,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Priority</label>
+                  <Label>Priority</Label>
                   <Select
                     value={currentTask.priority || 'medium'}
                     onValueChange={(value) => handleSelectChange('priority', value)}
@@ -538,7 +564,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Assigned By</label>
+                  <Label>Assigned By</Label>
                   <Input
                     name="assignedBy"
                     value={currentTask.assignedBy || ''}
@@ -548,7 +574,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Assigned Date</label>
+                  <Label>Assigned Date</Label>
                   <Input
                     type="date"
                     name="assignedDate"
@@ -559,7 +585,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Start Time</label>
+                  <Label>Start Time</Label>
                   <Input
                     type="time"
                     name="startTime"
@@ -570,7 +596,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">End Time</label>
+                  <Label>End Time</Label>
                   <Input
                     type="time"
                     name="endTime"
@@ -581,7 +607,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Status</label>
+                  <Label>Status</Label>
                   <Select
                     value={currentTask.status || 'pending'}
                     onValueChange={(value) => handleSelectChange('status', value)}
@@ -609,7 +635,7 @@ const DailyTask = () => {
               )}
               
               <div>
-                <label className="block text-sm font-medium mb-1">Work Summary / Progress</label>
+                <Label>Work Summary / Progress</Label>
                 <Textarea
                   name="workSummary"
                   value={currentTask.workSummary || ''}
@@ -620,7 +646,7 @@ const DailyTask = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">Pending Work</label>
+                <Label>Pending Work</Label>
                 <Textarea
                   name="pendingWork"
                   value={currentTask.pendingWork || ''}
@@ -630,7 +656,7 @@ const DailyTask = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">Challenges Faced</label>
+                <Label>Challenges Faced</Label>
                 <Textarea
                   name="challenges"
                   value={currentTask.challenges || ''}
@@ -641,7 +667,7 @@ const DailyTask = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Verified By</label>
+                  <Label>Verified By</Label>
                   <Input
                     name="verifiedBy"
                     value={currentTask.verifiedBy || ''}
@@ -650,7 +676,7 @@ const DailyTask = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Manager Remarks</label>
+                  <Label>Manager Remarks</Label>
                   <Input
                     name="managerRemarks"
                     value={currentTask.managerRemarks || ''}
@@ -660,7 +686,7 @@ const DailyTask = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">Employee Remarks</label>
+                <Label>Employee Remarks</Label>
                 <Textarea
                   name="employeeRemarks"
                   value={currentTask.employeeRemarks || ''}
@@ -670,7 +696,7 @@ const DailyTask = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">Attachments (comma separated)</label>
+                <Label>Attachments (comma separated)</Label>
                 <Input
                   name="attachments"
                   value={currentTask.attachments?.join(', ') || ''}
@@ -709,10 +735,12 @@ const DailyTask = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Task Details</h2>
+              <h2 className="text-lg sm:text-xl font-bold truncate max-w-[80%]">
+                Task Details: {selectedTask.taskTitle}
+              </h2>
               <button 
                 onClick={() => setIsViewModalOpen(false)} 
                 className="text-gray-500 hover:text-gray-700"
@@ -722,107 +750,107 @@ const DailyTask = () => {
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Task Title</h3>
-                  <p className="text-sm">{selectedTask.taskTitle}</p>
+                  <Label>Task Title</Label>
+                  <p className="text-sm mt-1">{selectedTask.taskTitle}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Task Type</h3>
-                  <p className="text-sm">{selectedTask.taskType}</p>
+                  <Label>Task Type</Label>
+                  <p className="text-sm mt-1">{selectedTask.taskType}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Date</h3>
-                  <p className="text-sm">{new Date(selectedTask.date).toLocaleDateString()}</p>
+                  <Label>Date</Label>
+                  <p className="text-sm mt-1">{new Date(selectedTask.date).toLocaleDateString()}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Status</h3>
-                  <div className="text-sm">{getStatusBadge(selectedTask.status)}</div>
+                  <Label>Status</Label>
+                  <div className="text-sm mt-1">{getStatusBadge(selectedTask.status)}</div>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Priority</h3>
-                  <div className="text-sm">{getPriorityBadge(selectedTask.priority)}</div>
+                  <Label>Priority</Label>
+                  <div className="text-sm mt-1">{getPriorityBadge(selectedTask.priority)}</div>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Duration</h3>
-                  <p className="text-sm">{selectedTask.totalDuration}</p>
+                  <Label>Duration</Label>
+                  <p className="text-sm mt-1">{selectedTask.totalDuration}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Start Time</h3>
-                  <p className="text-sm">{selectedTask.startTime}</p>
+                  <Label>Start Time</Label>
+                  <p className="text-sm mt-1">{selectedTask.startTime}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">End Time</h3>
-                  <p className="text-sm">{selectedTask.endTime}</p>
+                  <Label>End Time</Label>
+                  <p className="text-sm mt-1">{selectedTask.endTime}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Assigned By</h3>
-                  <p className="text-sm">{selectedTask.assignedBy}</p>
+                  <Label>Assigned By</Label>
+                  <p className="text-sm mt-1">{selectedTask.assignedBy}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Assigned Date</h3>
-                  <p className="text-sm">{new Date(selectedTask.assignedDate).toLocaleDateString()}</p>
+                  <Label>Assigned Date</Label>
+                  <p className="text-sm mt-1">{new Date(selectedTask.assignedDate).toLocaleDateString()}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Employee Name</h3>
-                  <p className="text-sm">{selectedTask.employeeName}</p>
+                  <Label>Employee Name</Label>
+                  <p className="text-sm mt-1">{selectedTask.employeeName}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Employee ID</h3>
-                  <p className="text-sm">{selectedTask.employeeId}</p>
+                  <Label>Employee ID</Label>
+                  <p className="text-sm mt-1">{selectedTask.employeeId}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Department</h3>
-                  <p className="text-sm">{selectedTask.department}</p>
+                  <Label>Department</Label>
+                  <p className="text-sm mt-1">{selectedTask.department}</p>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500">Designation</h3>
-                  <p className="text-sm">{selectedTask.designation}</p>
+                  <Label>Designation</Label>
+                  <p className="text-sm mt-1">{selectedTask.designation}</p>
                 </div>
               </div>
 
               <div className="border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-500">Work Summary</h3>
+                <Label>Work Summary</Label>
                 <p className="text-sm mt-1 whitespace-pre-line">{selectedTask.workSummary}</p>
               </div>
 
               <div className="border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-500">Pending Work</h3>
+                <Label>Pending Work</Label>
                 <p className="text-sm mt-1 whitespace-pre-line">{selectedTask.pendingWork}</p>
               </div>
 
               <div className="border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-500">Challenges Faced</h3>
+                <Label>Challenges Faced</Label>
                 <p className="text-sm mt-1 whitespace-pre-line">{selectedTask.challenges}</p>
               </div>
 
               <div className="border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-500">Employee Remarks</h3>
+                <Label>Employee Remarks</Label>
                 <p className="text-sm mt-1 whitespace-pre-line">{selectedTask.employeeRemarks}</p>
               </div>
 
               {selectedTask.managerRemarks && (
                 <div className="border-t pt-4">
-                  <h3 className="text-sm font-medium text-gray-500">Manager Remarks</h3>
+                  <Label>Manager Remarks</Label>
                   <p className="text-sm mt-1 whitespace-pre-line">{selectedTask.managerRemarks}</p>
                 </div>
               )}
 
               {selectedTask.verifiedBy && (
                 <div className="border-t pt-4">
-                  <h3 className="text-sm font-medium text-gray-500">Verified By</h3>
+                  <Label>Verified By</Label>
                   <p className="text-sm mt-1">{selectedTask.verifiedBy}</p>
                 </div>
               )}
 
               {selectedTask.attachments && selectedTask.attachments.length > 0 && (
                 <div className="border-t pt-4">
-                  <h3 className="text-sm font-medium text-gray-500">Attachments</h3>
+                  <Label>Attachments ({selectedTask.attachments.length})</Label>
                   <div className="mt-2 space-y-1">
                     {selectedTask.attachments.map((attachment, index) => (
                       <div key={index} className="flex items-center text-sm text-blue-600 hover:underline">
                         <Link className="h-3 w-3 mr-1" />
-                        <a href={attachment} target="_blank" rel="noopener noreferrer">
+                        <a href={attachment} target="_blank" rel="noopener noreferrer" className="truncate">
                           {attachment}
                         </a>
                       </div>
@@ -836,6 +864,7 @@ const DailyTask = () => {
               <Button 
                 variant="outline" 
                 onClick={() => setIsViewModalOpen(false)}
+                className="w-full sm:w-auto"
               >
                 Close
               </Button>

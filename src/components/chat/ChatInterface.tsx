@@ -15,6 +15,7 @@ const ChatInterface = () => {
   const { toast } = useToast();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showUserList, setShowUserList] = useState(true); // For mobile toggle
 
   const {
     messages,
@@ -66,6 +67,10 @@ const ChatInterface = () => {
     setSelectedUser(selectedUser);
     const chatId = getChatId(user!.id, selectedUser.id);
     setCurrentChat(chatId);
+    // On mobile, hide user list after selection
+    if (window.innerWidth < 768) {
+      setShowUserList(false);
+    }
   };
 
   // Get chatId helper
@@ -201,21 +206,43 @@ const ChatInterface = () => {
     return (typingUsers[chatId] || []).filter((id) => id !== user.id);
   };
 
+  // Toggle user list on mobile
+  const toggleUserList = () => {
+    setShowUserList(!showUserList);
+  };
+
   return (
-    <div className="flex h-full bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-80 border-r border-gray-200 bg-white flex-shrink-0">
+    <div className="flex flex-col md:flex-row h-full bg-gray-50 relative">
+      {/* Mobile header */}
+      <div className="md:hidden flex items-center justify-between p-3 border-b border-gray-200 bg-white">
+        <button 
+          onClick={toggleUserList}
+          className="p-2 rounded-md hover:bg-gray-100"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <h1 className="text-lg font-semibold">
+          {selectedUser ? selectedUser.name : 'Chat'}
+        </h1>
+        <div className="w-8"></div> {/* Spacer for alignment */}
+      </div>
+
+      {/* Sidebar - Conditionally shown on mobile */}
+      <div className={`${showUserList ? 'flex' : 'hidden'} md:flex w-full md:w-80 border-r border-gray-200 bg-white flex-shrink-0 absolute md:relative z-10 h-full md:h-auto`}>
         <UserList
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           selectedUser={selectedUser}
           onUserSelect={handleUserSelect}
           onlineUsers={onlineUsers}
+          onCloseMobile={() => setShowUserList(false)}
         />
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-full">
         {selectedUser ? (
           <ChatWindow
             selectedUser={selectedUser}
@@ -226,25 +253,30 @@ const ChatInterface = () => {
             onExitChat={() => {
               setSelectedUser(null);
               setCurrentChat(null);
+              // On mobile, show user list when exiting chat
+              if (window.innerWidth < 768) {
+                setShowUserList(true);
+              }
             }}
             onTyping={handleTyping}
             typingUsers={getCurrentTypingUsers()}
             messagesEndRef={messagesEndRef}
+            onBackToUsers={toggleUserList}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 bg-gray-50">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="text-center"
+              className="text-center p-4"
             >
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-green-100 rounded-full flex items-center justify-center mb-6 mx-auto">
-                <span className="text-6xl">💬</span>
+              <div className="w-24 h-24 md:w-32 md:h-32 bg-gradient-to-br from-blue-100 to-green-100 rounded-full flex items-center justify-center mb-4 md:mb-6 mx-auto">
+                <span className="text-4xl md:text-6xl">💬</span>
               </div>
-              <h3 className="text-xl font-semibold mb-3 text-gray-700">
+              <h3 className="text-lg md:text-xl font-semibold mb-2 md:mb-3 text-gray-700">
                 {user?.role === 'admin' ? 'Admin Chat Panel' : 'Employee Communication'}
               </h3>
-              <p className="text-gray-500 max-w-sm leading-relaxed">
+              <p className="text-sm md:text-base text-gray-500 max-w-xs md:max-w-sm leading-relaxed">
                 Select a contact from the sidebar to start a conversation.
                 <br />
                 Stay connected with your team through instant messaging.

@@ -283,33 +283,37 @@ const DailyTaskEmployee: React.FC = () => {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Loading...</CardTitle>
-        </CardHeader>
-        <CardContent className="flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-        </CardContent>
-      </Card>
+      <div className="p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Loading...</CardTitle>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-red-500">{error}</div>
-        </CardContent>
-      </Card>
+      <div className="p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-red-500">{error}</div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="p-4 space-y-6">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Submit Daily Task</CardTitle>
         </CardHeader>
@@ -322,7 +326,7 @@ const DailyTaskEmployee: React.FC = () => {
                 onValueChange={setSelectedDepartment}
                 required
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
@@ -343,7 +347,7 @@ const DailyTaskEmployee: React.FC = () => {
                     disabled={!selectedDepartment}
                     required
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
                     <SelectContent>
@@ -371,6 +375,7 @@ const DailyTaskEmployee: React.FC = () => {
                       value={formData.date}
                       onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
                       required
+                      className="w-full"
                     />
                   </div>
 
@@ -382,6 +387,7 @@ const DailyTaskEmployee: React.FC = () => {
                       value={formData.time}
                       onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
                       required
+                      className="w-full"
                     />
                   </div>
                 </div>
@@ -394,6 +400,7 @@ const DailyTaskEmployee: React.FC = () => {
                     onChange={(e) => setFormData(prev => ({ ...prev, task: e.target.value }))}
                     placeholder="What task was performed?"
                     required
+                    className="w-full"
                   />
                 </div>
 
@@ -406,6 +413,7 @@ const DailyTaskEmployee: React.FC = () => {
                     placeholder="Describe the task in detail"
                     rows={4}
                     required
+                    className="w-full"
                   />
                 </div>
 
@@ -418,7 +426,7 @@ const DailyTaskEmployee: React.FC = () => {
                       status: value as 'pending' | 'in-progress' | 'completed'
                     }))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -433,6 +441,7 @@ const DailyTaskEmployee: React.FC = () => {
                   <Button 
                     type="submit" 
                     disabled={submitting || !formData.employeeId}
+                    className="w-full md:w-auto"
                   >
                     {submitting ? 'Submitting...' : 'Submit Task'}
                   </Button>
@@ -443,17 +452,17 @@ const DailyTaskEmployee: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="w-full">
         <CardHeader>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
             <CardTitle>Task History</CardTitle>
-            <div className="flex items-center space-x-4">
-              <div className="flex space-x-2">
+            <div className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">
+              <div className="flex flex-col space-y-2 md:flex-row md:space-y-0 md:space-x-2">
                 <Select
                   value={filterDepartment}
                   onValueChange={setFilterDepartment}
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-full md:w-[180px]">
                     <SelectValue placeholder="Filter by department" />
                   </SelectTrigger>
                   <SelectContent>
@@ -468,7 +477,7 @@ const DailyTaskEmployee: React.FC = () => {
                   value={filterDate}
                   onChange={(e) => setFilterDate(e.target.value)}
                   placeholder="Filter by date"
-                  className="w-[180px]"
+                  className="w-full md:w-[180px]"
                 />
               </div>
               <div className="flex space-x-2">
@@ -476,15 +485,17 @@ const DailyTaskEmployee: React.FC = () => {
                   variant={viewMode === 'table' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setViewMode('table')}
+                  className="flex-1 md:flex-none"
                 >
-                  Table View
+                  Table
                 </Button>
                 <Button
                   variant={viewMode === 'card' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setViewMode('card')}
+                  className="flex-1 md:flex-none"
                 >
-                  Card View
+                  Cards
                 </Button>
               </div>
             </div>
@@ -500,57 +511,59 @@ const DailyTaskEmployee: React.FC = () => {
               No tasks found matching your filters
             </div>
           ) : viewMode === 'table' ? (
-            <Table>
-              <TableCaption>A list of filtered daily tasks</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell className="font-medium">
-                      {formatDate(task.date)} at {task.time}
-                    </TableCell>
-                    <TableCell>{task.department}</TableCell>
-                    <TableCell>{task.employeeName}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{task.task}</TableCell>
-                    <TableCell>
-                      <Badge className={getStatusBadge(task.status)}>
-                        {task.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedTask(task)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table className="min-w-full">
+                <TableCaption>A list of filtered daily tasks</TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Date</TableHead>
+                    <TableHead className="whitespace-nowrap">Department</TableHead>
+                    <TableHead className="whitespace-nowrap">Employee</TableHead>
+                    <TableHead className="whitespace-nowrap">Task</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                    <TableHead className="whitespace-nowrap">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {formatDate(task.date)} at {task.time}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{task.department}</TableCell>
+                      <TableCell className="whitespace-nowrap">{task.employeeName}</TableCell>
+                      <TableCell className="max-w-[150px] truncate">{task.task}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Badge className={getStatusBadge(task.status)}>
+                          {task.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedTask(task)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredTasks.map((task) => (
-                <Card key={task.id}>
+                <Card key={task.id} className="h-full">
                   <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <CardTitle className="text-lg">{task.task}</CardTitle>
-                      <Badge className={getStatusBadge(task.status)}>
+                    <div className="flex justify-between items-start space-x-2">
+                      <CardTitle className="text-lg truncate">{task.task}</CardTitle>
+                      <Badge className={`${getStatusBadge(task.status)} whitespace-nowrap`}>
                         {task.status}
                       </Badge>
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 truncate">
                       {task.department} • {task.employeeName}
                     </div>
                   </CardHeader>
@@ -562,11 +575,12 @@ const DailyTaskEmployee: React.FC = () => {
                       <div className="text-sm text-gray-500">
                         {formatDate(task.date)} at {task.time}
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end pt-2">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setSelectedTask(task)}
+                          className="w-full md:w-auto"
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           View Details
@@ -588,7 +602,7 @@ const DailyTaskEmployee: React.FC = () => {
           </DialogHeader>
           {selectedTask && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label className="text-gray-500">Task Title</Label>
                   <p className="font-medium">{selectedTask.task}</p>
@@ -624,7 +638,7 @@ const DailyTaskEmployee: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end pt-4">
                 <Button onClick={() => setSelectedTask(null)}>
                   Close
                 </Button>

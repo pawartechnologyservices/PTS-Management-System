@@ -1257,6 +1257,7 @@ const ReportsManagement = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -1279,6 +1280,15 @@ const ReportsManagement = () => {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 {getTaskStatusBadge(task.status)}
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => handleViewTask(task)}
+        >
+          <Eye className="h-4 w-4" />
+        </Button>
+      </td>
                             </tr>
                           ))}
                         </tbody>

@@ -195,8 +195,8 @@ const SalaryManagement: React.FC = () => {
     try {
       // Use the latest basic salary or fallback to employee's salary
       const basicSalary = getEmployeeBasicSalary(employee.employeeId) || employee.salary || 0;
-      const allowances = basicSalary * 0.3;
-      const deductions = basicSalary * 0.12;
+      const allowances = basicSalary * 0.3; // 30% of basic salary
+      const deductions = basicSalary * 0.12; // 12% of basic salary
       const netSalary = basicSalary + allowances - deductions;
 
       const newSlipRef = push(ref(database, `users/${user.id}/salaries`));
@@ -466,27 +466,27 @@ const SalaryManagement: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-2 sm:px-4">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Salary Management</h1>
-          <p className="text-gray-600">Generate and manage employee salary slips</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Salary Management</h1>
+          <p className="text-sm sm:text-base text-gray-600">Generate and manage employee salary slips</p>
         </div>
       </motion.div>
 
       <Tabs defaultValue="manage" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="manage" className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4" />
-            Manage Salaries
+          <TabsTrigger value="manage" className="flex items-center gap-2 text-xs sm:text-sm">
+            <CreditCard className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="truncate">Manage Salaries</span>
           </TabsTrigger>
-          <TabsTrigger value="template" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Salary Templates
+          <TabsTrigger value="template" className="flex items-center gap-2 text-xs sm:text-sm">
+            <Settings className="h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="truncate">Salary Templates</span>
           </TabsTrigger>
         </TabsList>
 
@@ -498,15 +498,15 @@ const SalaryManagement: React.FC = () => {
           >
             <Card>
               <CardHeader>
-                <CardTitle>Select Period</CardTitle>
+                <CardTitle className="text-lg sm:text-xl">Select Period</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-4">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
                   <Select 
                     value={selectedMonth.toString()} 
                     onValueChange={(value) => setSelectedMonth(parseInt(value))}
                   >
-                    <SelectTrigger className="w-48">
+                    <SelectTrigger className="w-full sm:w-48">
                       <SelectValue placeholder="Select Month" />
                     </SelectTrigger>
                     <SelectContent>
@@ -519,7 +519,7 @@ const SalaryManagement: React.FC = () => {
                     value={selectedYear.toString()} 
                     onValueChange={(value) => setSelectedYear(parseInt(value))}
                   >
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-full sm:w-32">
                       <SelectValue placeholder="Year" />
                     </SelectTrigger>
                     <SelectContent>
@@ -540,9 +540,9 @@ const SalaryManagement: React.FC = () => {
           >
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                   <Users className="h-4 w-4" />
-                  Generate Salary Slips - {months[selectedMonth]} {selectedYear}
+                  <span className="truncate">Generate Salary Slips - {months[selectedMonth]} {selectedYear}</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -557,32 +557,33 @@ const SalaryManagement: React.FC = () => {
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-3"
                       >
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold">{employee.name}</h3>
-                            {hasSlip && <Badge className="bg-green-100 text-green-700">Generated</Badge>}
+                            <h3 className="font-semibold truncate">{employee.name}</h3>
+                            {hasSlip && <Badge className="bg-green-100 text-green-700 text-xs">Generated</Badge>}
                           </div>
-                          <p className="text-sm text-gray-600">{employee.employeeId} • {employee.designation}</p>
-                          <p className="text-sm text-gray-600">Basic Salary: {formatCurrency(basicSalary)}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs sm:text-sm text-gray-600 truncate">{employee.employeeId} • {employee.designation}</p>
+                          <p className="text-xs sm:text-sm text-gray-600">Basic Salary: {formatCurrency(basicSalary)}</p>
+                          <p className="text-xs text-gray-500 truncate">
                             Work Mode: {employee.workMode} • {employee.employmentType}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
                           <Dialog>
                             <DialogTrigger asChild>
                               <Button 
                                 size="sm" 
                                 variant="outline"
                                 onClick={() => editEmployeeData(employee)}
+                                className="text-xs sm:text-sm h-8"
                               >
                                 <Edit className="h-3 w-3 mr-1" />
                                 Edit
                               </Button>
                             </DialogTrigger>
-                            <DialogContent className="sm:max-w-[425px]">
+                            <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
                               <DialogHeader>
                                 <DialogTitle>Edit Employee Data - {employee.name}</DialogTitle>
                               </DialogHeader>
@@ -665,6 +666,7 @@ const SalaryManagement: React.FC = () => {
                             onClick={() => generateSalarySlip(employee)}
                             disabled={hasSlip}
                             size="sm"
+                            className="text-xs sm:text-sm h-8"
                           >
                             <CreditCard className="h-3 w-3 mr-1" />
                             {hasSlip ? 'Generated' : 'Generate'}
@@ -690,9 +692,9 @@ const SalaryManagement: React.FC = () => {
           >
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                   <Download className="h-4 w-4" />
-                  Generated Salary Slips ({currentMonthSlips.length})
+                  <span>Generated Salary Slips ({currentMonthSlips.length})</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -703,35 +705,36 @@ const SalaryManagement: React.FC = () => {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-3"
                     >
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold">{slip.employeeName}</h3>
-                          <Badge className={slip.status === 'sent' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}>
+                          <h3 className="font-semibold truncate">{slip.employeeName}</h3>
+                          <Badge className={`text-xs ${slip.status === 'sent' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
                             {slip.status}
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-600">{slip.employeeId}</p>
-                        <p className="text-sm text-gray-600">Net Salary: {formatCurrency(slip.netSalary)}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs sm:text-sm text-gray-600 truncate">{slip.employeeId}</p>
+                        <p className="text-xs sm:text-sm text-gray-600">Net Salary: {formatCurrency(slip.netSalary)}</p>
+                        <p className="text-xs text-gray-500 truncate">
                           Generated: {new Date(slip.generatedAt).toLocaleDateString()}
                           {slip.status === 'sent' && ` • Sent: ${new Date(slip.sentAt!).toLocaleDateString()}`}
                         </p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
                         <Dialog>
                           <DialogTrigger asChild>
                             <Button 
                               size="sm" 
                               variant="outline"
                               onClick={() => editSalarySlip(slip)}
+                              className="text-xs sm:text-sm h-8"
                             >
                               <Edit className="h-3 w-3 mr-1" />
                               Edit
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="sm:max-w-[425px]">
+                          <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle>Edit Salary Slip - {slip.employeeName}</DialogTitle>
                             </DialogHeader>
@@ -780,6 +783,7 @@ const SalaryManagement: React.FC = () => {
                           size="sm" 
                           variant="outline"
                           onClick={() => downloadSlipAsPDF(slip)}
+                          className="text-xs sm:text-sm h-8"
                         >
                           <Download className="h-3 w-3 mr-1" />
                           PDF
@@ -788,6 +792,7 @@ const SalaryManagement: React.FC = () => {
                           size="sm"
                           onClick={() => sendSalarySlip(slip)}
                           disabled={slip.status === 'sent'}
+                          className="text-xs sm:text-sm h-8"
                         >
                           <Send className="h-3 w-3 mr-1" />
                           {slip.status === 'sent' ? 'Sent' : 'Send'}
@@ -796,7 +801,7 @@ const SalaryManagement: React.FC = () => {
                           size="sm"
                           variant="outline"
                           onClick={() => deleteSalarySlip(slip.id)}
-                          className="text-red-600 hover:bg-red-50"
+                          className="text-red-600 hover:bg-red-50 text-xs sm:text-sm h-8"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -817,33 +822,33 @@ const SalaryManagement: React.FC = () => {
         <TabsContent value="template">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <Settings className="h-4 w-4" />
                 Salary Templates
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="p-4 border rounded-lg">
-                  <h3 className="font-semibold mb-2">Salary Structure</h3>
-                  <p className="text-sm text-gray-600 mb-4">
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <h3 className="font-semibold mb-2 text-sm sm:text-base">Salary Structure</h3>
+                  <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4">
                     Basic Salary + 30% Allowances - 12% Deductions = Net Salary
                   </p>
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <div className="flex justify-between mb-1">
+                  <div className="bg-gray-50 p-3 sm:p-4 rounded-md">
+                    <div className="flex justify-between mb-1 text-xs sm:text-sm">
                       <span>Basic Salary:</span>
                       <span>{formatCurrency(50000)}</span>
                     </div>
-                    <div className="flex justify-between mb-1">
+                    <div className="flex justify-between mb-1 text-xs sm:text-sm">
                       <span>Allowances (30%):</span>
                       <span>+ {formatCurrency(15000)}</span>
                     </div>
-                    <div className="flex justify-between mb-1">
+                    <div className="flex justify-between mb-1 text-xs sm:text-sm">
                       <span>Deductions (12%):</span>
                       <span>- {formatCurrency(6000)}</span>
                     </div>
                     <div className="border-t border-gray-200 my-2"></div>
-                    <div className="flex justify-between font-semibold">
+                    <div className="flex justify-between font-semibold text-xs sm:text-sm">
                       <span>Net Salary:</span>
                       <span>{formatCurrency(59000)}</span>
                     </div>

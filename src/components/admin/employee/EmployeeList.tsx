@@ -4,13 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
-import { Eye, Edit, Trash2, Mail, Phone, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, Edit, Trash2, Mail, Phone, User } from 'lucide-react';
 import { ref, onValue, off, update, remove } from 'firebase/database';
 import { database } from '../../../firebase';
 import { useAuth } from '../../../hooks/useAuth';
 import { deleteUser, getAuth } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import EmployeeFilters from './EmployeeFilters';
+import AddEmployeeDialog from './AddEmployeeDialog';
 
 interface Employee {
   id: string;
@@ -24,40 +25,30 @@ interface Employee {
   createdAt: string;
   profileImage?: string;
   addedBy?: string;
+  [key: string]: any; // For additional properties
 }
 
 interface EmployeeListProps {
   onViewEmployee: (employee: Employee) => void;
-  onEditEmployee: (employee: Employee) => void;
 }
 
 const EmployeeList: React.FC<EmployeeListProps> = ({
-  onViewEmployee,
-  onEditEmployee
+  onViewEmployee
 }) => {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(() => 
-    window.innerWidth < 768 ? 5 : 10
-  );
+  const [itemsPerPage] = useState(10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [departments, setDepartments] = useState<string[]>([]);
-
-  // Handle window resize for responsive items per page
-  useEffect(() => {
-    const handleResize = () => {
-      setItemsPerPage(window.innerWidth < 768 ? 5 : 10);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const [designations, setDesignations] = useState<string[]>([]);
+  const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Fetch employees from Firebase
   useEffect(() => {
@@ -69,6 +60,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     const fetchEmployees = onValue(employeesRef, (snapshot) => {
       const employeesData: Employee[] = [];
       const deptSet = new Set<string>();
+      const desigSet = new Set<string>();
       
       snapshot.forEach((childSnapshot) => {
         const employee = childSnapshot.val();
@@ -79,15 +71,19 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
           employeeId: employee.employeeId || `EMP-${childSnapshot.key?.slice(0, 8)}`
         });
 
-        // Collect unique departments
+        // Collect unique departments and designations
         if (employee.department) {
           deptSet.add(employee.department);
+        }
+        if (employee.designation) {
+          desigSet.add(employee.designation);
         }
       });
 
       setEmployees(employeesData);
       setFilteredEmployees(employeesData);
       setDepartments(Array.from(deptSet));
+      setDesignations(Array.from(desigSet));
       setLoading(false);
     }, (error) => {
       console.error('Error fetching employees:', error);
@@ -227,9 +223,25 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
     }
   };
 
+  // Handle edit employee
+  const handleEditEmployee = (employee: Employee) => {
+    setEmployeeToEdit(employee);
+    setEditDialogOpen(true);
+  };
+
+  // Handle successful edit
+  const handleEditSuccess = () => {
+    setEditDialogOpen(false);
+    setEmployeeToEdit(null);
+    toast({
+      title: "Success",
+      description: "Employee updated successfully",
+    });
+  };
+
   if (loading) {
     return (
-      <Card className="mx-2 sm:mx-0">
+      <Card>
         <CardHeader>
           <CardTitle>Loading employees...</CardTitle>
         </CardHeader>
@@ -242,7 +254,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
 
   if (error) {
     return (
-      <Card className="mx-2 sm:mx-0">
+      <Card>
         <CardHeader>
           <CardTitle>Error</CardTitle>
         </CardHeader>
@@ -254,7 +266,19 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
   }
 
   return (
-    <div className="space-y-4 mx-2 sm:mx-0">
+    <div className="space-y-4">
+      {/* Edit Employee Dialog */}
+      {employeeToEdit && (
+        <AddEmployeeDialog
+          departments={departments}
+          designations={designations}
+          employeeToEdit={employeeToEdit}
+          onEditSuccess={handleEditSuccess}
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+        />
+      )}
+
       {/* Filters Component */}
       <EmployeeFilters
         searchTerm={searchTerm}
@@ -269,11 +293,11 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
       {/* Employee List */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2 sm:gap-4">
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <span>Employees ({filteredEmployees.length})</span>
             </div>
-            <Badge variant="outline" className="self-start sm:self-auto">
+            <Badge variant="outline">
               {filteredEmployees.filter(e => e.isActive).length} Active
             </Badge>
           </CardTitle>
@@ -291,60 +315,55 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-4 sm:gap-0"
+                  className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-3 sm:gap-0"
                 >
-                  <div className="flex items-center gap-4 w-full sm:w-auto">
-                    <Avatar className="w-10 h-10 sm:w-12 sm:h-12">
+                  <div className="flex items-start sm:items-center gap-4 w-full sm:w-auto">
+                    <Avatar className="w-12 h-12">
                       <AvatarImage src={employee.profileImage} />
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-xs sm:text-sm">
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
                         {employee.name?.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 sm:flex-none">
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                        <h3 className="font-semibold truncate">{employee.name}</h3>
-                        <Badge 
-                          variant={employee.isActive ? "default" : "secondary"}
-                          className="w-fit"
-                        >
+                        <h3 className="font-semibold">{employee.name}</h3>
+                        <Badge variant={employee.isActive ? "default" : "secondary"}>
                           {employee.isActive ? "Active" : "Inactive"}
                         </Badge>
                       </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-gray-600 mt-1">
-                        <span className="flex items-center gap-1 truncate">
-                          <Mail className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{employee.email}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-gray-600 mt-1 sm:mt-0">
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          <span className="truncate max-w-[180px]">{employee.email}</span>
                         </span>
-                        <span className="flex items-center gap-1 truncate">
-                          <Phone className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{employee.phone}</span>
+                        <span className="flex items-center gap-1 sm:ml-0">
+                          <Phone className="w-3 h-3" />
+                          {employee.phone}
                         </span>
-                        <span className="flex items-center gap-1 truncate">
-                          <User className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{employee.employeeId}</span>
+                        <span className="flex items-center gap-1 sm:ml-0">
+                          <User className="w-3 h-3" />
+                          {employee.employeeId}
                         </span>
                       </div>
-                      <div className="text-sm text-gray-500 truncate">
+                      <div className="text-sm text-gray-500 mt-1 sm:mt-0">
                         {employee.designation} • {employee.department}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-end sm:justify-normal gap-1 sm:gap-2 w-full sm:w-auto">
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => onViewEmployee(employee)}
-                      className="hover:bg-blue-50 hover:text-blue-600 h-8 w-8 sm:h-10 sm:w-10"
-                      aria-label="View employee"
+                      className="hover:bg-blue-50 hover:text-blue-600 h-8 w-8"
                     >
                       <Eye className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => onEditEmployee(employee)}
-                      className="hover:bg-green-50 hover:text-green-600 h-8 w-8 sm:h-10 sm:w-10"
-                      aria-label="Edit employee"
+                      onClick={() => handleEditEmployee(employee)}
+                      className="hover:bg-green-50 hover:text-green-600 h-8 w-8"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
@@ -352,23 +371,27 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => handleToggleStatus(employee.id)}
-                      className={`h-8 px-2 sm:h-10 sm:px-4 ${
-                        employee.isActive 
-                          ? 'hover:bg-yellow-50 hover:text-yellow-600' 
-                          : 'hover:bg-green-50 hover:text-green-600'
-                      }`}
-                      aria-label={employee.isActive ? "Deactivate employee" : "Activate employee"}
+                      className={`hidden sm:inline-flex hover:bg-${employee.isActive ? 'yellow' : 'green'}-50 hover:text-${employee.isActive ? 'yellow' : 'green'}-600`}
                     >
-                      <span className="text-xs sm:text-sm">
-                        {employee.isActive ? 'Deactivate' : 'Activate'}
-                      </span>
+                      {employee.isActive ? 'Deactivate' : 'Activate'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleToggleStatus(employee.id)}
+                      className={`sm:hidden hover:bg-${employee.isActive ? 'yellow' : 'green'}-50 hover:text-${employee.isActive ? 'yellow' : 'green'}-600 h-8 w-8`}
+                    >
+                      {employee.isActive ? (
+                        <span className="text-xs">Off</span>
+                      ) : (
+                        <span className="text-xs">On</span>
+                      )}
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDeleteEmployee(employee.id)}
-                      className="hover:bg-red-50 hover:text-red-600 h-8 w-8 sm:h-10 sm:w-10"
-                      aria-label="Delete employee"
+                      className="hover:bg-red-50 hover:text-red-600 h-8 w-8"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -379,7 +402,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between mt-6 gap-4">
-                  <p className="text-sm text-gray-600 text-center sm:text-left">
+                  <p className="text-sm text-gray-600">
                     Showing {indexOfFirstEmployee + 1} to {Math.min(indexOfLastEmployee, filteredEmployees.length)} of {filteredEmployees.length} employees
                   </p>
                   <div className="flex items-center gap-2">
@@ -388,14 +411,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                       size="sm"
                       onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
                       disabled={currentPage === 1}
-                      className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
                     >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span className="sr-only sm:not-sr-only sm:ml-2">Previous</span>
+                      Previous
                     </Button>
-                    <div className="flex items-center gap-1 overflow-x-auto max-w-[200px] sm:max-w-none">
-                      {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                        // Show first, last and nearby pages for mobile
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        // Show limited page numbers on mobile
                         let pageNum;
                         if (totalPages <= 5) {
                           pageNum = i + 1;
@@ -413,16 +434,22 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                             variant={currentPage === pageNum ? "default" : "outline"}
                             size="sm"
                             onClick={() => setCurrentPage(pageNum)}
-                            className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
                           >
                             {pageNum}
                           </Button>
                         );
                       })}
-                      {totalPages > 5 && (
-                        <span className="px-2 text-sm text-gray-500 hidden sm:inline">
-                          ...
-                        </span>
+                      {totalPages > 5 && currentPage < totalPages - 2 && (
+                        <span className="px-2">...</span>
+                      )}
+                      {totalPages > 5 && currentPage < totalPages - 2 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(totalPages)}
+                        >
+                          {totalPages}
+                        </Button>
                       )}
                     </div>
                     <Button
@@ -430,10 +457,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({
                       size="sm"
                       onClick={() => setCurrentPage(Math.min(currentPage + 1, totalPages))}
                       disabled={currentPage === totalPages}
-                      className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-4"
                     >
-                      <span className="sr-only sm:not-sr-only sm:mr-2">Next</span>
-                      <ChevronRight className="w-4 h-4" />
+                      Next
                     </Button>
                   </div>
                 </div>

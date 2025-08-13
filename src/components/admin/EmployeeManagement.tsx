@@ -1,11 +1,9 @@
-
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Download } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useEmployeeManagement } from '../../hooks/useEmployeeManagement';
 import AddEmployeeDialog from './employee/AddEmployeeDialog';
-import EmployeeFilters from './employee/EmployeeFilters';
 import EmployeeList from './employee/EmployeeList';
 import EmployeeDetailsDialog from './employee/EmployeeDetailsDialog';
 

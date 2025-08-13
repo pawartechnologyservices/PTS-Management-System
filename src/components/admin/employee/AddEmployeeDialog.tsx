@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '../../ui/avatar';
-import { Plus, Upload, Camera, User, Phone, Calendar, DollarSign, FirstAid } from 'lucide-react';
-import { getDatabase, ref, set } from 'firebase/database';
+import { Plus, Upload, Camera, User, Phone, Calendar, DollarSign, Edit } from 'lucide-react';
+import { getDatabase, ref, set, update } from 'firebase/database';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, database } from '../../../firebase';
 import { useAuth } from '../../../hooks/useAuth';
@@ -37,17 +37,110 @@ interface NewEmployee {
 
 interface AddEmployeeDialogProps {
   departments: string[];
-  designations: string[];
   onSuccess?: (employeeUid: string) => void;
+  employeeToEdit?: any;
+  onEditSuccess?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
+
+const departmentDesignations = {
+  'Web Development': [
+    'Web Development Intern',
+    'Web Development Trainee',
+    'Frontend Developer',
+    'Backend Developer',
+    'Full Stack Developer',
+    'Team Lead',
+    'Web Development Manager',
+    'Senior Web Developer',
+    'Lead Web Developer',
+    'UI/UX Developer'
+  ],
+  'Software Development': [
+    'Software Developer Intern',
+    'Software Developer Trainee',
+    'Junior Software Developer',
+    'Software Developer',
+    'Senior Software Developer',
+    'Team Lead',
+    'Software Development Manager',
+    'Lead Software Developer',
+    'DevOps Engineer',
+    'QA Engineer'
+  ],
+  'Artificial Intelligence': [
+    'AI Intern',
+    'AI Trainee',
+    'Machine Learning Engineer',
+    'Data Scientist',
+    'AI Researcher',
+    'Team Lead',
+    'AI Manager',
+    'Senior AI Engineer',
+    'Computer Vision Engineer',
+    'NLP Specialist'
+  ],
+  'Product Designing': [
+    'Product Design Intern',
+    'Product Design Trainee',
+    'Junior Product Designer',
+    'Product Designer',
+    'Senior Product Designer',
+    'UX Designer',
+    'UI Designer',
+    'Team Lead',
+    'Product Design Manager',
+    'Lead Product Designer'
+  ],
+  'Graphic Designing': [
+    'Graphic Design Intern',
+    'Graphic Design Trainee',
+    'Junior Graphic Designer',
+    'Graphic Designer',
+    'Senior Graphic Designer',
+    'Illustrator',
+    'Motion Graphics Designer',
+    'Team Lead',
+    'Creative Director',
+    'Art Director'
+  ],
+  'Digital Marketing': [
+    'Digital Marketing Intern',
+    'Digital Marketing Trainee',
+    'Digital Marketing Executive',
+    'SEO Specialist',
+    'Social Media Manager',
+    'Content Marketer',
+    'PPC Specialist',
+    'Team Lead',
+    'Digital Marketing Manager',
+    'Growth Hacker'
+  ],
+  'Sales': [
+    'Sales Intern',
+    'Sales Trainee',
+    'Sales Executive',
+    'Account Executive',
+    'Business Development Representative',
+    'Team Lead',
+    'Sales Manager',
+    'Regional Sales Manager',
+    'Director of Sales',
+    'VP of Sales'
+  ]
+};
 
 const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
   departments,
-  designations,
-  onSuccess
+  onSuccess,
+  employeeToEdit,
+  onEditSuccess,
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange
 }) => {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [formData, setFormData] = useState<NewEmployee>({
     name: '',
     email: '',
@@ -69,111 +162,50 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [designations, setDesignations] = useState<string[]>([]);
+
+  const isControlled = externalOpen !== undefined;
+  const open = isControlled ? externalOpen : internalOpen;
+  const setOpen = isControlled ? externalOnOpenChange || (() => {}) : setInternalOpen;
 
   const workModes = ['office', 'remote', 'hybrid'];
   const employmentTypes = ['full-time', 'part-time', 'contract', 'internship'];
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, profileImage: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+  useEffect(() => {
+    if (formData.department && departmentDesignations[formData.department as keyof typeof departmentDesignations]) {
+      setDesignations(departmentDesignations[formData.department as keyof typeof departmentDesignations]);
+      setFormData(prev => ({ ...prev, designation: '' }));
+    } else {
+      setDesignations([]);
     }
-  };
+  }, [formData.department]);
 
-  const handleSubmit = async () => {
-    if (!user || user.role !== 'admin') {
-      setError('Only admins can add employees');
-      return;
-    }
-
-    // Required field validation
-    const requiredFields = [
-      'name', 'email', 'phone', 'password', 
-      'department', 'designation', 'joiningDate',
-      'salary', 'emergencyContactName', 'emergencyContactNumber'
-    ];
-
-    const missingFields = requiredFields.filter(field => !formData[field as keyof NewEmployee]);
-
-    if (missingFields.length > 0) {
-      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (formData.emergencyContactNumber && formData.emergencyContactNumber.length < 10) {
-      setError('Emergency contact number must be at least 10 digits');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // 1. Create authentication user
-const adminEmail = auth.currentUser?.email;
-const adminPassword = prompt("Please re-enter your password to create employee:"); // Not ideal UX, but quick fix
-
-// 1. Create authentication user (logs in as new employee)
-const userCredential = await createUserWithEmailAndPassword(
-  auth,
-  formData.email,
-  formData.password
-);
-
-// 2. Immediately sign back in as admin
-await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      const employeeUid = userCredential.user.uid;
-
-      // 2. Prepare employee data for database
-      const employeeData = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        department: formData.department,
-        designation: formData.designation,
-        profileImage: formData.profileImage,
-        joiningDate: formData.joiningDate?.toISOString(),
-        salary: parseFloat(formData.salary),
-        emergencyContact: {
-          name: formData.emergencyContactName,
-          phone: formData.emergencyContactNumber
-        },
-        address: formData.address,
-        workMode: formData.workMode,
-        employmentType: formData.employmentType,
-        bankDetails: {
-          accountNumber: formData.bankAccountNumber,
-          bankName: formData.bankName,
-          ifscCode: formData.ifscCode
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        role: 'employee',
-        addedBy: user.id,
-        status: 'active'
-      };
-
-      // 3. Save to Realtime Database under the admin's UID
-      const employeeRef = ref(database, `users/${user.id}/employees/${employeeUid}`);
-      await set(employeeRef, employeeData);
-
-      // 4. Also store a reference under the employee's own UID
-      const employeeSelfRef = ref(database, `users/${employeeUid}/employee`);
-      await set(employeeSelfRef, {
-        ...employeeData,
-        managedBy: user.id
+  useEffect(() => {
+    if (employeeToEdit) {
+      setFormData({
+        name: employeeToEdit.name || '',
+        email: employeeToEdit.email || '',
+        phone: employeeToEdit.phone || '',
+        department: employeeToEdit.department || '',
+        designation: employeeToEdit.designation || '',
+        password: '',
+        profileImage: employeeToEdit.profileImage || '',
+        joiningDate: employeeToEdit.joiningDate ? new Date(employeeToEdit.joiningDate) : undefined,
+        salary: employeeToEdit.salary?.toString() || '',
+        emergencyContactName: employeeToEdit.emergencyContact?.name || '',
+        emergencyContactNumber: employeeToEdit.emergencyContact?.phone || '',
+        address: employeeToEdit.address || '',
+        workMode: employeeToEdit.workMode || 'office',
+        employmentType: employeeToEdit.employmentType || 'full-time',
+        bankAccountNumber: employeeToEdit.bankDetails?.accountNumber || '',
+        bankName: employeeToEdit.bankDetails?.bankName || '',
+        ifscCode: employeeToEdit.bankDetails?.ifscCode || ''
       });
 
-      // 5. Reset form and close dialog
+      if (employeeToEdit.department && departmentDesignations[employeeToEdit.department as keyof typeof departmentDesignations]) {
+        setDesignations(departmentDesignations[employeeToEdit.department as keyof typeof departmentDesignations]);
+      }
+    } else {
       setFormData({
         name: '',
         email: '',
@@ -193,17 +225,155 @@ await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
         bankName: '',
         ifscCode: ''
       });
+      setDesignations([]);
+    }
+  }, [employeeToEdit]);
 
-      // 6. Call success callback if provided
-      if (onSuccess) {
-        onSuccess(employeeUid);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, profileImage: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!user || user.role !== 'admin') {
+      setError('Only admins can add/edit employees');
+      return;
+    }
+
+    const requiredFields = [
+      'name', 'email', 'phone', 
+      'department', 'designation', 'joiningDate',
+      'salary', 'emergencyContactName', 'emergencyContactNumber'
+    ];
+
+    if (!employeeToEdit) {
+      requiredFields.push('password');
+    }
+
+    const missingFields = requiredFields.filter(field => !formData[field as keyof NewEmployee]);
+
+    if (missingFields.length > 0) {
+      setError(`Please fill in all required fields: ${missingFields.join(', ')}`);
+      return;
+    }
+
+    if (!employeeToEdit && formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    if (formData.emergencyContactNumber && formData.emergencyContactNumber.length < 10) {
+      setError('Emergency contact number must be at least 10 digits');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (employeeToEdit) {
+        const employeeData = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          designation: formData.designation,
+          profileImage: formData.profileImage,
+          joiningDate: formData.joiningDate?.toISOString(),
+          salary: parseFloat(formData.salary),
+          emergencyContact: {
+            name: formData.emergencyContactName,
+            phone: formData.emergencyContactNumber
+          },
+          address: formData.address,
+          workMode: formData.workMode,
+          employmentType: formData.employmentType,
+          bankDetails: {
+            accountNumber: formData.bankAccountNumber,
+            bankName: formData.bankName,
+            ifscCode: formData.ifscCode
+          },
+          updatedAt: new Date().toISOString()
+        };
+
+        const employeeRef = ref(database, `users/${user.id}/employees/${employeeToEdit.id}`);
+        await update(employeeRef, employeeData);
+
+        const employeeSelfRef = ref(database, `users/${employeeToEdit.id}/employee`);
+        await update(employeeSelfRef, employeeData);
+
+        toast.success('Employee updated successfully!');
+        if (onEditSuccess) onEditSuccess();
+      } else {
+        const adminEmail = auth.currentUser?.email;
+        const adminPassword = prompt("Please re-enter Admin password to create employee:");
+
+        if (!adminPassword) {
+          setError('Admin password is required');
+          setLoading(false);
+          return;
+        }
+
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          formData.email,
+          formData.password
+        );
+
+        await signInWithEmailAndPassword(auth, adminEmail!, adminPassword);
+        const employeeUid = userCredential.user.uid;
+
+        const employeeData = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          department: formData.department,
+          designation: formData.designation,
+          profileImage: formData.profileImage,
+          joiningDate: formData.joiningDate?.toISOString(),
+          salary: parseFloat(formData.salary),
+          emergencyContact: {
+            name: formData.emergencyContactName,
+            phone: formData.emergencyContactNumber
+          },
+          address: formData.address,
+          workMode: formData.workMode,
+          employmentType: formData.employmentType,
+          bankDetails: {
+            accountNumber: formData.bankAccountNumber,
+            bankName: formData.bankName,
+            ifscCode: formData.ifscCode
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          role: 'employee',
+          addedBy: user.id,
+          status: 'active'
+        };
+
+        const employeeRef = ref(database, `users/${user.id}/employees/${employeeUid}`);
+        await set(employeeRef, employeeData);
+
+        const employeeSelfRef = ref(database, `users/${employeeUid}/employee`);
+        await set(employeeSelfRef, {
+          ...employeeData,
+          managedBy: user.id
+        });
+
+        if (onSuccess) onSuccess(employeeUid);
+        toast.success('Employee created successfully!');
       }
-toast.success('Employee created successfully!');
 
       setOpen(false);
     } catch (err: any) {
-      console.error('Error adding employee:', err);
-      setError(err.message || 'Failed to create employee account');
+      console.error('Error adding/updating employee:', err);
+      setError(err.message || `Failed to ${employeeToEdit ? 'update' : 'create'} employee account`);
     } finally {
       setLoading(false);
     }
@@ -212,21 +382,28 @@ toast.success('Employee created successfully!');
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {loading && (
-  <div className="loading-overlay">
-    <div className="spinner" />
-    <p>Creating employee, please wait...</p>
-  </div>
-)}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+            <p className="mt-2 text-center">
+              {employeeToEdit ? 'Updating employee, please wait...' : 'Creating employee, please wait...'}
+            </p>
+          </div>
+        </div>
+      )}
 
-      <DialogTrigger asChild>
-        <Button className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Employee
-        </Button>
-      </DialogTrigger>
+      {!employeeToEdit && (
+        <DialogTrigger asChild>
+          <Button className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Employee
+          </Button>
+        </DialogTrigger>
+      )}
+
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Employee</DialogTitle>
+          <DialogTitle>{employeeToEdit ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
         </DialogHeader>
         
         <div className="space-y-4">
@@ -236,7 +413,6 @@ toast.success('Employee created successfully!');
             </div>
           )}
 
-          {/* Profile Picture Upload */}
           <div className="flex flex-col items-center space-y-2">
             <div className="relative">
               <Avatar className="w-24 h-24 border-2 border-gray-200">
@@ -266,7 +442,6 @@ toast.success('Employee created successfully!');
             <p className="text-sm text-gray-500">Click to upload profile picture</p>
           </div>
 
-          {/* Basic Information Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Full Name *</label>
@@ -285,7 +460,7 @@ toast.success('Employee created successfully!');
                 placeholder="john@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
-                disabled={loading}
+                disabled={loading || !!employeeToEdit}
               />
             </div>
 
@@ -299,19 +474,20 @@ toast.success('Employee created successfully!');
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Password *</label>
-              <Input
-                type="password"
-                placeholder="At least 6 characters"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                disabled={loading}
-              />
-            </div>
+            {!employeeToEdit && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Password *</label>
+                <Input
+                  type="password"
+                  placeholder="At least 6 characters"
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  disabled={loading}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Job Information Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Department *</label>
@@ -336,10 +512,10 @@ toast.success('Employee created successfully!');
               <Select
                 value={formData.designation}
                 onValueChange={(value) => setFormData({...formData, designation: value})}
-                disabled={loading}
+                disabled={loading || !formData.department}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select designation" />
+                  <SelectValue placeholder={formData.department ? "Select designation" : "Select department first"} />
                 </SelectTrigger>
                 <SelectContent>
                   {designations.map((des) => (
@@ -437,7 +613,6 @@ toast.success('Employee created successfully!');
             </div>
           </div>
 
-          {/* Emergency Contact Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Emergency Contact Name *</label>
@@ -472,7 +647,6 @@ toast.success('Employee created successfully!');
             </div>
           </div>
 
-          {/* Address Section */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">Address</label>
             <Input
@@ -483,7 +657,6 @@ toast.success('Employee created successfully!');
             />
           </div>
 
-          {/* Bank Details Section */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Bank Name</label>
@@ -516,7 +689,6 @@ toast.success('Employee created successfully!');
             </div>
           </div>
 
-          {/* Form Actions */}
           <div className="flex justify-end gap-3 pt-4">
             <Button
               variant="outline"
@@ -534,14 +706,14 @@ toast.success('Employee created successfully!');
                 loading ||
                 !formData.name ||
                 !formData.email ||
-                !formData.password ||
+                (!employeeToEdit && !formData.password) ||
                 !formData.department ||
                 !formData.designation ||
                 !formData.joiningDate ||
                 !formData.salary ||
                 !formData.emergencyContactName ||
                 !formData.emergencyContactNumber ||
-                formData.password.length < 6
+                (!employeeToEdit && formData.password.length < 6)
               }
             >
               {loading ? (
@@ -550,9 +722,9 @@ toast.success('Employee created successfully!');
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Creating...
+                  {employeeToEdit ? 'Updating...' : 'Creating...'}
                 </>
-              ) : 'Create Employee'}
+              ) : employeeToEdit ? 'Update Employee' : 'Create Employee'}
             </Button>
           </div>
         </div>

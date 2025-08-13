@@ -13,7 +13,7 @@ import {
   FileText,
   X,
   Building2,
-  MessageCircle, // Added the MessageCircle icon
+  MessageCircle,
   Workflow
 } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -21,9 +21,10 @@ import { useAuth } from '../../hooks/useAuth';
 
 interface EmployeeSidebarProps {
   onClose: () => void;
+  isMobile?: boolean;
 }
 
-const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
+const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose, isMobile = false }) => {
   const location = useLocation();
   const { user } = useAuth();
 
@@ -31,7 +32,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/employee/' },
     { icon: User, label: 'My Info', path: '/employee/info' },
     { icon: Clock, label: 'Attendance', path: '/employee/attendance' },
-    { icon: MessageCircle, label: 'Chat', path: '/employee/chat' }, 
+    { icon: MessageCircle, label: 'Chat', path: '/employee/chat' },
     { icon: Calendar, label: 'Meetings', path: '/employee/meetings' },
     { icon: Workflow, label: 'My Task', path: '/employee/mytask' },
     { icon: FolderOpen, label: 'Projects', path: '/employee/projects' },
@@ -51,7 +52,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className={`h-full flex flex-col bg-white ${isMobile ? 'w-full' : 'w-64'}`}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-3">
@@ -63,14 +64,15 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
             <p className="text-xs text-gray-500">Employee Panel</p>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        {isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* User Info */}
@@ -79,17 +81,17 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
           <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
             {user?.name.split(' ').map(n => n[0]).join('')}
           </div>
-          <div>
-            <p className="font-medium text-gray-800">{user?.name}</p>
-            <p className="text-sm text-gray-500">{user?.designation}</p>
-            <p className="text-xs text-gray-400">{user?.employeeId}</p>
+          <div className="min-w-0">
+            <p className="font-medium text-gray-800 truncate">{user?.name}</p>
+            <p className="text-sm text-gray-500 truncate">{user?.designation}</p>
+            <p className="text-xs text-gray-400 truncate">{user?.employeeId}</p>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
-        <ul className="space-y-2">
+      <nav className="flex-1 overflow-y-auto p-4">
+        <ul className="space-y-1">
           {menuItems.map((item, index) => (
             <motion.li
               key={item.path}
@@ -106,8 +108,8 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <item.icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
+                <item.icon className="w-5 h-5 flex-shrink-0" />
+                <span className="font-medium truncate">{item.label}</span>
               </NavLink>
             </motion.li>
           ))}
@@ -116,7 +118,7 @@ const EmployeeSidebar: React.FC<EmployeeSidebarProps> = ({ onClose }) => {
 
       {/* Footer */}
       <div className="p-4 border-t border-gray-200">
-        <div className="text-xs text-gray-500 text-center">
+        <div className="text-xs text-gray-500 text-center truncate">
           © 2024 PTS System
         </div>
       </div>

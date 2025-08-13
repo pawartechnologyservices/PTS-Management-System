@@ -105,7 +105,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
         setLoading(true);
         setError(null);
 
-        // Fetch the project data from admin's projects
         const projectPath = `users/${user.id}/projects/${projectId}`;
         const projectRef = ref(database, projectPath);
         
@@ -132,7 +131,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
           endDate: fetchedProject.endDate
         });
 
-        // Fetch all employees assigned to this project
         await fetchAssignedEmployees(fetchedProject);
 
         setLoading(false);
@@ -153,8 +151,8 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
         const empId = childSnapshot.key;
         const employeeData = childSnapshot.val();
 
-        if (empId && (project.assignedEmployees.includes(empId) || 
-            empId === project.assignedTeamLeader)) {
+        if (empId && (project.assignedEmployees.includes(empId)) || 
+            empId === project.assignedTeamLeader) {
           employeesData.push({
             id: empId,
             name: employeeData.name || '',
@@ -170,7 +168,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
 
     fetchProjectData();
 
-    // Set up real-time listener for project updates
     const realtimeProjectPath = `users/${user.id}/projects/${projectId}`;
     const projectRef = ref(database, realtimeProjectPath);
     const unsubscribe = onValue(projectRef, (snapshot) => {
@@ -227,150 +224,141 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
     }));
   };
 
- const handleEdit = async () => {
-  if (!user || !project) return;
+  const handleEdit = async () => {
+    if (!user || !project) return;
 
-  try {
-    const changes = [];
-    const updatedProject = { ...project };
+    try {
+      const changes = [];
+      const updatedProject = { ...project };
 
-    // Check what fields have changed
-    if (editData.name !== project.name) {
-      changes.push({
-        field: 'name',
-        oldValue: project.name,
-        newValue: editData.name
-      });
-      updatedProject.name = editData.name;
-    }
-
-    if (editData.description !== project.description) {
-      changes.push({
-        field: 'description',
-        oldValue: project.description,
-        newValue: editData.description
-      });
-      updatedProject.description = editData.description;
-    }
-
-    if (editData.priority !== project.priority) {
-      changes.push({
-        field: 'priority',
-        oldValue: project.priority,
-        newValue: editData.priority
-      });
-      updatedProject.priority = editData.priority;
-    }
-
-    if (editData.status !== project.status) {
-      changes.push({
-        field: 'status',
-        oldValue: project.status,
-        newValue: editData.status
-      });
-      updatedProject.status = editData.status;
-    }
-
-    if (editData.startDate !== project.startDate) {
-      changes.push({
-        field: 'startDate',
-        oldValue: project.startDate,
-        newValue: editData.startDate
-      });
-      updatedProject.startDate = editData.startDate;
-    }
-
-    if (editData.endDate !== project.endDate) {
-      changes.push({
-        field: 'endDate',
-        oldValue: project.endDate,
-        newValue: editData.endDate
-      });
-      updatedProject.endDate = editData.endDate;
-    }
-
-    // If no changes, just close the dialog
-    if (changes.length === 0) {
-      setIsEditOpen(false);
-      return;
-    }
-
-    // Add update record
-    const timestamp = Date.now().toString();
-    updatedProject.updates = {
-      ...updatedProject.updates,
-      [timestamp]: {
-        timestamp,
-        updatedBy: user.name || 'Admin',
-        updatedById: user.id,
-        changes,
-        note: 'Project details updated'
+      if (editData.name !== project.name) {
+        changes.push({
+          field: 'name',
+          oldValue: project.name,
+          newValue: editData.name
+        });
+        updatedProject.name = editData.name;
       }
-    };
 
-    // Update project in admin's projects
-    await update(
-      ref(database, `users/${user.id}/projects/${projectId}`),
-      updatedProject
-    );
+      if (editData.description !== project.description) {
+        changes.push({
+          field: 'description',
+          oldValue: project.description,
+          newValue: editData.description
+        });
+        updatedProject.description = editData.description;
+      }
 
-    // Update project for all assigned employees with only their tasks
-    const updatePromises = [
-      project.assignedTeamLeader,
-      ...project.assignedEmployees
-    ].filter(Boolean).map(async (employeeId) => {
-      // Filter tasks assigned to this employee
-      const employeeTasks = Object.values(updatedProject.tasks).filter(
-        task => task.assignedTo === employeeId
-      );
+      if (editData.priority !== project.priority) {
+        changes.push({
+          field: 'priority',
+          oldValue: project.priority,
+          newValue: editData.priority
+        });
+        updatedProject.priority = editData.priority;
+      }
 
-      // Create employee-specific project data
-      const employeeProjectData = {
-        ...updatedProject,
-        tasks: employeeTasks.reduce((acc, task) => {
-          acc[task.id] = task;
-          return acc;
-        }, {} as Record<string, Task>)
+      if (editData.status !== project.status) {
+        changes.push({
+          field: 'status',
+          oldValue: project.status,
+          newValue: editData.status
+        });
+        updatedProject.status = editData.status;
+      }
+
+      if (editData.startDate !== project.startDate) {
+        changes.push({
+          field: 'startDate',
+          oldValue: project.startDate,
+          newValue: editData.startDate
+        });
+        updatedProject.startDate = editData.startDate;
+      }
+
+      if (editData.endDate !== project.endDate) {
+        changes.push({
+          field: 'endDate',
+          oldValue: project.endDate,
+          newValue: editData.endDate
+        });
+        updatedProject.endDate = editData.endDate;
+      }
+
+      if (changes.length === 0) {
+        setIsEditOpen(false);
+        return;
+      }
+
+      const timestamp = Date.now().toString();
+      updatedProject.updates = {
+        ...updatedProject.updates,
+        [timestamp]: {
+          timestamp,
+          updatedBy: user.name || 'Admin',
+          updatedById: user.id,
+          changes,
+          note: 'Project details updated'
+        }
       };
 
-      return update(
-        ref(database, `users/${user.id}/employees/${employeeId}/projects/${projectId}`),
-        employeeProjectData
+      await update(
+        ref(database, `users/${user.id}/projects/${projectId}`),
+        updatedProject
       );
-    });
 
-    await Promise.all(updatePromises);
+      const updatePromises = [
+        project.assignedTeamLeader,
+        ...project.assignedEmployees
+      ].filter(Boolean).map(async (employeeId) => {
+        const employeeTasks = Object.values(updatedProject.tasks).filter(
+          task => task.assignedTo === employeeId
+        );
 
-    if (onEdit) {
-      onEdit(updatedProject);
+        const employeeProjectData = {
+          ...updatedProject,
+          tasks: employeeTasks.reduce((acc, task) => {
+            acc[task.id] = task;
+            return acc;
+          }, {} as Record<string, Task>)
+        };
+
+        return update(
+          ref(database, `users/${user.id}/employees/${employeeId}/projects/${projectId}`),
+          employeeProjectData
+        );
+      });
+
+      await Promise.all(updatePromises);
+
+      if (onEdit) {
+        onEdit(updatedProject);
+      }
+      
+      setIsEditOpen(false);
+      toast({
+        title: "Project Updated",
+        description: "Project has been updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating project:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update project. Please try again."
+      });
     }
-    
-    setIsEditOpen(false);
-    toast({
-      title: "Project Updated",
-      description: "Project has been updated successfully"
-    });
-  } catch (error) {
-    console.error('Error updating project:', error);
-    toast({
-      variant: "destructive",
-      title: "Error",
-      description: "Failed to update project. Please try again."
-    });
-  }
-};
+  };
 
   const handleDelete = async () => {
     if (!user || !project) return;
     if (!window.confirm('Are you sure you want to delete this project?')) return;
 
     try {
-      // Delete project from admin's projects
       await remove(
         ref(database, `users/${user.id}/projects/${projectId}`)
       );
 
-      // Delete project from all assigned employees
       const deletePromises = [
         project.assignedTeamLeader,
         ...project.assignedEmployees
@@ -400,90 +388,85 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
     }
   };
 
-  const handleTaskStatusUpdate = async () => {
-    if (!user || !project || !selectedTask) return;
+ const handleTaskStatusUpdate = async () => {
+  if (!user || !project || !selectedTask) return;
 
-    try {
-      const timestamp = Date.now().toString();
-      const changes = [{
-        field: 'status',
-        oldValue: selectedTask.status,
-        newValue: newTaskStatus
-      }];
+  try {
+    const timestamp = Date.now().toString();
+    const changes = [{
+      field: 'status',
+      oldValue: selectedTask.status,
+      newValue: newTaskStatus
+    }];
 
-      const updateData: ProjectUpdate = {
-        timestamp,
-        updatedBy: user.name || 'Admin',
-        updatedById: user.id,
-        changes,
-        note: updateNote
-      };
+    const updateData: ProjectUpdate = {
+      timestamp,
+      updatedBy: user.name || 'Admin',
+      updatedById: user.id,
+      changes,
+      note: updateNote
+    };
 
-      // Update task in admin's project
-      const adminUpdates = {
-        [`tasks/${selectedTask.id}/status`]: newTaskStatus,
-        [`tasks/${selectedTask.id}/updatedAt`]: new Date().toISOString(),
-        [`tasks/${selectedTask.id}/updates/${timestamp}`]: updateData
-      };
+    // Update task in admin's project
+    const adminUpdates = {
+      [`tasks/${selectedTask.id}/status`]: newTaskStatus,
+      [`tasks/${selectedTask.id}/updatedAt`]: new Date().toISOString(),
+      [`tasks/${selectedTask.id}/updates/${timestamp}`]: updateData
+    };
 
+    await update(
+      ref(database, `users/${user.id}/projects/${projectId}`),
+      adminUpdates
+    );
+
+    // Only update the task for the assigned employee (not all employees)
+    const assignedEmployeeId = selectedTask.assignedTo;
+    if (assignedEmployeeId) {
       await update(
-        ref(database, `users/${user.id}/projects/${projectId}`),
+        ref(database, `users/${user.id}/employees/${assignedEmployeeId}/projects/${projectId}`),
         adminUpdates
       );
-
-      // Update task in all assigned employees' projects
-      const updatePromises = [
-        project.assignedTeamLeader,
-        ...project.assignedEmployees
-      ].filter(Boolean).map(employeeId => {
-        return update(
-          ref(database, `users/${user.id}/employees/${employeeId}/projects/${projectId}`),
-          adminUpdates
-        );
-      });
-
-      await Promise.all(updatePromises);
-
-      // Update local state
-      setProject(prev => {
-        if (!prev) return null;
-        
-        const updatedTasks = { ...prev.tasks };
-        updatedTasks[selectedTask.id] = {
-          ...updatedTasks[selectedTask.id],
-          status: newTaskStatus,
-          updatedAt: new Date().toISOString(),
-          updates: {
-            ...(updatedTasks[selectedTask.id].updates || {}),
-            [timestamp]: updateData
-          }
-        };
-
-        return {
-          ...prev,
-          tasks: updatedTasks
-        };
-      });
-
-      setSelectedTask(null);
-      setUpdateNote('');
-      setNewTaskStatus('');
-      setShowTaskDialog(false);
-      
-      toast({
-        title: "Task Updated",
-        description: "Task status has been updated successfully"
-      });
-    } catch (error) {
-      console.error('Error updating task:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update task. Please try again."
-      });
     }
-  };
 
+    // Update local state
+    setProject(prev => {
+      if (!prev) return null;
+      
+      const updatedTasks = { ...prev.tasks };
+      updatedTasks[selectedTask.id] = {
+        ...updatedTasks[selectedTask.id],
+        status: newTaskStatus,
+        updatedAt: new Date().toISOString(),
+        updates: {
+          ...(updatedTasks[selectedTask.id].updates || {}),
+          [timestamp]: updateData
+        }
+      };
+
+      return {
+        ...prev,
+        tasks: updatedTasks
+      };
+    });
+
+    setSelectedTask(null);
+    setUpdateNote('');
+    setNewTaskStatus('');
+    setShowTaskDialog(false);
+    
+    toast({
+      title: "Task Updated",
+      description: "Task status has been updated successfully"
+    });
+  } catch (error) {
+    console.error('Error updating task:', error);
+    toast({
+      variant: "destructive",
+      title: "Error",
+      description: "Failed to update task. Please try again."
+    });
+  }
+};
   const formatDisplayDate = (dateString: string) => {
     if (!dateString) return 'Not set';
     const date = new Date(dateString);
@@ -497,7 +480,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
   const formatUpdateDateTime = (timestamp: string) => {
     const date = new Date(parseInt(timestamp));
     return date.toLocaleString('en-US', {
-      year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -511,6 +493,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.1 }}
+        className="w-full"
       >
         <Card className="hover:shadow-lg transition-shadow duration-200">
           <CardHeader className="pb-3">
@@ -532,6 +515,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.1 }}
+        className="w-full"
       >
         <Card className="hover:shadow-lg transition-shadow duration-200 border-red-200">
           <CardHeader className="pb-3">
@@ -553,6 +537,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.1 }}
+        className="w-full"
       >
         <Card className="hover:shadow-lg transition-shadow duration-200">
           <CardHeader className="pb-3">
@@ -575,7 +560,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
   const completedTasksCount = tasksArray.filter(task => task.status === 'completed').length;
   const totalTasksCount = tasksArray.length;
 
-  // Group tasks by assigned employee
   const tasksByEmployee: Record<string, Task[]> = {};
   tasksArray.forEach(task => {
     if (!tasksByEmployee[task.assignedTo]) {
@@ -584,36 +568,33 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectId, index, onEdit, onD
     tasksByEmployee[task.assignedTo].push(task);
   });
 
-  // Sort updates by timestamp (newest first)
   const projectUpdates = project.updates 
     ? Object.entries(project.updates)
         .sort(([a], [b]) => parseInt(b) - parseInt(a))
         .map(([timestamp, update]) => ({ timestamp, ...update }))
     : [];
 
-    // Add this check when determining what to show
-const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team Lead';
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.1 }}
+      className="w-full"
     >
       <Card className="hover:shadow-lg transition-shadow duration-200" onClick={onClick}>
         <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <CardTitle className="text-lg font-semibold line-clamp-1">
+          <div className="flex items-start justify-between gap-2">
+            <CardTitle className="text-lg font-semibold line-clamp-2 break-words">
               {project.name}
             </CardTitle>
-            <div className="flex gap-1">
+            <div className="flex gap-1 shrink-0">
               <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
                 <DialogTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                     <Edit className="h-4 w-4" />
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>Edit Project</DialogTitle>
                   </DialogHeader>
@@ -635,7 +616,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                           setEditData({...editData, priority: value})
                         }
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="text-xs">
                           <SelectValue placeholder="Priority" />
                         </SelectTrigger>
                         <SelectContent>
@@ -651,7 +632,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                           setEditData({...editData, status: value})
                         }
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="text-xs">
                           <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -667,11 +648,13 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                         type="date"
                         value={editData.startDate}
                         onChange={(e) => setEditData({...editData, startDate: e.target.value})}
+                        className="text-xs"
                       />
                       <Input
                         type="date"
                         value={editData.endDate}
                         onChange={(e) => setEditData({...editData, endDate: e.target.value})}
+                        className="text-xs"
                       />
                     </div>
                     <div className="flex gap-2">
@@ -691,23 +674,26 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                 variant="ghost"
                 size="sm"
                 className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-                onClick={handleDelete}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete();
+                }}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge className={getPriorityColor(project.priority)}>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <Badge className={`text-xs ${getPriorityColor(project.priority)}`}>
               {project.priority}
             </Badge>
-            <Badge className={getStatusColor(project.status)}>
+            <Badge className={`text-xs ${getStatusColor(project.status)}`}>
               {project.status.replace('_', ' ')}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-gray-600 line-clamp-2">
+          <p className="text-sm text-gray-600 line-clamp-3 break-words">
             {project.description}
           </p>
           
@@ -721,76 +707,73 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
           
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-gray-500" />
-              <span>{formatDisplayDate(project.startDate)}</span>
+              <Calendar className="h-4 w-4 text-gray-500 shrink-0" />
+              <span className="truncate">{formatDisplayDate(project.startDate)}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-gray-500" />
-              <span>{formatDisplayDate(project.endDate)}</span>
+              <Clock className="h-4 w-4 text-gray-500 shrink-0" />
+              <span className="truncate">{formatDisplayDate(project.endDate)}</span>
             </div>
           </div>
           
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium">Team Leader:</span>
-              <Badge variant="outline" className="text-xs">
+              <Users className="h-4 w-4 text-gray-500 shrink-0" />
+              <span className="text-sm font-medium truncate">Team Leader:</span>
+              <Badge variant="outline" className="text-xs truncate max-w-[120px]">
                 {teamLeaderName || 'Unassigned'}
               </Badge>
             </div>
             {assignedEmployeesNames.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-gray-500 opacity-0" />
-                <span className="text-sm font-medium">Team Members:</span>
-                <div className="flex flex-wrap gap-1">
-                  {assignedEmployeesNames.slice(0, 3).map((name, idx) => (
-                    <Badge key={idx} variant="outline" className="text-xs">
-                      {name}
-                    </Badge>
-                  ))}
-                  {assignedEmployeesNames.length > 3 && (
-                    <Badge variant="outline" className="text-xs">
-                      +{assignedEmployeesNames.length - 3} more
-                    </Badge>
-                  )}
+              <div className="flex items-start gap-2">
+                <Users className="h-4 w-4 text-gray-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium">Team Members:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {assignedEmployeesNames.slice(0, 3).map((name, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs truncate max-w-[100px]">
+                        {name}
+                      </Badge>
+                    ))}
+                    {assignedEmployeesNames.length > 3 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{assignedEmployeesNames.length - 3} more
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          
-          
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-gray-500" />
+              <CheckCircle className="h-4 w-4 text-gray-500 shrink-0" />
               <span className="text-sm font-medium">Total Tasks:</span>
               <span className="text-sm">
                 {completedTasksCount} / {totalTasksCount} completed
               </span>
             </div>
 
-            
-            
             {/* Tasks by Employee */}
-           {/* // Then modify the task display logic: */}
-{Object.entries(tasksByEmployee).map(([empId, tasks]) => {
-  const employee = employees.find(emp => emp.id === empId);
-  if (!employee) return null;
-  
-  const completed = tasks.filter(task => task.status === 'completed').length;
- 
+            {Object.entries(tasksByEmployee).map(([empId, tasks]) => {
+              const employee = employees.find(emp => emp.id === empId);
+              if (!employee) return null;
+              
+              const completed = tasks.filter(task => task.status === 'completed').length;
+            
               return (
                 <div key={empId} className="space-y-2">
                   <div className="flex items-center gap-2 pl-6">
-                    <User className="h-4 w-4 text-gray-500" />
-                    <span className="text-sm font-medium">{employee.name}:</span>
+                    <User className="h-4 w-4 text-gray-500 shrink-0" />
+                    <span className="text-sm font-medium truncate">{employee.name}:</span>
                     <span className="text-xs">
                       {completed} / {tasks.length} completed
                     </span>
                   </div>
                   
                   {/* Individual Tasks */}
-                  <div className="pl-10 space-y-2">
+                  <div className="pl-6 sm:pl-10 space-y-2">
                     {tasks.map(task => {
                       const taskUpdates = task.updates 
                         ? Object.entries(task.updates)
@@ -800,25 +783,30 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
 
                       return (
                         <div key={task.id} className="border rounded p-2">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <h4 className="text-sm font-medium">{task.title}</h4>
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-sm font-medium line-clamp-1 break-words">{task.title}</h4>
                               {task.description && (
-                                <p className="text-xs text-gray-500">{task.description}</p>
+                                <p className="text-xs text-gray-500 line-clamp-2 break-words mt-1">
+                                  {task.description}
+                                </p>
                               )}
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Badge className={getPriorityColor(task.priority)}>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <Badge className={`text-xs ${getPriorityColor(task.priority)}`}>
                                 {task.priority}
                               </Badge>
-                              <Badge className={getStatusColor(task.status)}>
+                              <Badge className={`text-xs ${getStatusColor(task.status)}`}>
                                 {task.status.replace('_', ' ')}
                               </Badge>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => toggleTaskExpand(task.id)}
+                                className="h-6 w-6 p-0 ml-auto"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTaskExpand(task.id);
+                                }}
                               >
                                 {expandedTasks[task.id] ? (
                                   <ChevronUp className="h-4 w-4" />
@@ -832,11 +820,11 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                           {/* Task Details */}
                           <Collapsible open={expandedTasks[task.id]}>
                             <CollapsibleContent className="mt-2 space-y-2">
-                              <div className="flex items-center gap-2 text-xs">
-                                <span>Due: {formatDisplayDate(task.dueDate)}</span>
-                                <span>Created: {formatDisplayDate(task.createdAt)}</span>
+                              <div className="flex flex-col xs:flex-row xs:items-center gap-2 text-xs flex-wrap">
+                                <span className="whitespace-nowrap">Due: {formatDisplayDate(task.dueDate)}</span>
+                                <span className="whitespace-nowrap">Created: {formatDisplayDate(task.createdAt)}</span>
                                 {task.updatedAt && (
-                                  <span>Updated: {formatDisplayDate(task.updatedAt)}</span>
+                                  <span className="whitespace-nowrap">Updated: {formatDisplayDate(task.updatedAt)}</span>
                                 )}
                               </div>
                               
@@ -845,8 +833,9 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                   <Button 
                                     variant="outline" 
                                     size="sm"
-                                    className="text-xs h-6"
-                                    onClick={() => {
+                                    className="text-xs h-6 w-full sm:w-auto"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setSelectedTask(task);
                                       setNewTaskStatus(task.status);
                                       setUpdateNote('');
@@ -855,7 +844,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                     Update Status
                                   </Button>
                                 </DialogTrigger>
-                                <DialogContent>
+                                <DialogContent className="sm:max-w-md">
                                   <DialogHeader>
                                     <DialogTitle>Update Task Status</DialogTitle>
                                   </DialogHeader>
@@ -870,7 +859,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                         value={newTaskStatus} 
                                         onValueChange={setNewTaskStatus}
                                       >
-                                        <SelectTrigger>
+                                        <SelectTrigger className="text-xs">
                                           <SelectValue placeholder="Select status" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -887,6 +876,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                         placeholder="Describe the update..."
                                         value={updateNote}
                                         onChange={(e) => setUpdateNote(e.target.value)}
+                                        className="text-xs"
                                       />
                                     </div>
                                   </div>
@@ -894,11 +884,13 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                     <Button 
                                       variant="outline"
                                       onClick={() => setShowTaskDialog(false)}
+                                      className="text-xs"
                                     >
                                       Cancel
                                     </Button>
                                     <Button 
                                       onClick={handleTaskStatusUpdate}
+                                      className="text-xs"
                                     >
                                       Save Update
                                     </Button>
@@ -910,19 +902,21 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                               {taskUpdates.length > 0 && (
                                 <div className="mt-2 border-t pt-2">
                                   <h5 className="text-xs font-medium mb-1">Update History</h5>
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 max-h-40 overflow-y-auto">
                                     {taskUpdates.map((update, idx) => (
                                       <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
-                                        <div className="flex justify-between items-start">
+                                        <div className="flex flex-col xs:flex-row xs:justify-between xs:items-start gap-1">
                                           <div className="flex items-center gap-1">
-                                            <User className="h-3 w-3" />
-                                            <span className="font-medium">{update.updatedBy}</span>
+                                            <User className="h-3 w-3 shrink-0" />
+                                            <span className="font-medium truncate">{update.updatedBy}</span>
                                           </div>
-                                          <span className="text-gray-500">{formatUpdateDateTime(update.timestamp)}</span>
+                                          <span className="text-gray-500 text-right xs:text-left">
+                                            {formatUpdateDateTime(update.timestamp)}
+                                          </span>
                                         </div>
                                         <div className="mt-1">
                                           {update.changes.map((change, i) => (
-                                            <p key={i} className="mt-1">
+                                            <p key={i} className="mt-1 break-words">
                                               Changed <span className="font-medium">{change.field}</span> from 
                                               <span className="italic"> "{change.oldValue}"</span> to 
                                               <span className="font-medium"> "{change.newValue}"</span>
@@ -930,7 +924,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                                           ))}
                                         </div>
                                         {update.note && (
-                                          <p className="mt-1 italic">Note: "{update.note}"</p>
+                                          <p className="mt-1 italic break-words">Note: "{update.note}"</p>
                                         )}
                                       </div>
                                     ))}
@@ -952,19 +946,21 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
           {projectUpdates.length > 0 && (
             <div className="space-y-2 border-t pt-4">
               <h3 className="text-sm font-medium">Project Updates</h3>
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-40 overflow-y-auto">
                 {projectUpdates.map((update, idx) => (
                   <div key={idx} className="text-xs bg-gray-50 p-2 rounded">
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col xs:flex-row xs:justify-between xs:items-start gap-1">
                       <div className="flex items-center gap-1">
-                        <User className="h-3 w-3" />
-                        <span className="font-medium">{update.updatedBy}</span>
+                        <User className="h-3 w-3 shrink-0" />
+                        <span className="font-medium truncate">{update.updatedBy}</span>
                       </div>
-                      <span className="text-gray-500">{formatUpdateDateTime(update.timestamp)}</span>
+                      <span className="text-gray-500 text-right xs:text-left">
+                        {formatUpdateDateTime(update.timestamp)}
+                      </span>
                     </div>
                     <div className="mt-1">
                       {update.changes.map((change, i) => (
-                        <p key={i} className="mt-1">
+                        <p key={i} className="mt-1 break-words">
                           Changed <span className="font-medium">{change.field}</span> from 
                           <span className="italic"> "{change.oldValue}"</span> to 
                           <span className="font-medium"> "{change.newValue}"</span>
@@ -972,7 +968,7 @@ const isTeamLead = employees.find(e => e.id === user?.id)?.designation === 'Team
                       ))}
                     </div>
                     {update.note && (
-                      <p className="mt-1 italic">Note: "{update.note}"</p>
+                      <p className="mt-1 italic break-words">Note: "{update.note}"</p>
                     )}
                   </div>
                 ))}
