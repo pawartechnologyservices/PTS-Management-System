@@ -1,11 +1,32 @@
+# render.yaml
+
 services:
   - type: web
-    name: pts-management-system
-    env: static
+    name: vite-react-shadcn-app
+    env: node
+    plan: free
+    region: ohio
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    pullRequestPreviewsEnabled: true
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    startCommand: npm run preview
+    envVars:
+      - key: NODE_VERSION
+        value: 18.18.0
+    autoDeploy: true
+
+  # Optional: If you need a backend API service in the future
+  # - type: web
+  #   name: your-api
+  #   env: node
+  #   plan: free
+  #   buildCommand: cd api && npm install
+  #   startCommand: cd api && npm start
+  #   envVars:
+  #     - key: NODE_ENV
+  #       value: production
+
+# Optional: If you need a database in the future
+# databases:
+#   - name: your-db
+#     databaseName: yourdb
+#     plan: free
+#     ipAllowList: []
