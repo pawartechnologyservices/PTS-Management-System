@@ -69,6 +69,18 @@ const departmentDesignations = {
     'DevOps Engineer',
     'QA Engineer'
   ],
+  'Cyber Security': [
+    'Cyber Security Intern',
+    'Cyber Security Trainee',
+    'Junior Cyber Security Specialist',
+    'Cyber Security Specialist',
+    'Cyber Senior Security Specialist',
+    'Cyber Team Lead',
+    'Cyber Security Manager',
+    'Lead Cyber Security Specialist',
+    'Cyber Security DevOps Engineer',
+    'Cyber Security QA Engineer'
+  ],
   'Artificial Intelligence': [
     'AI Intern',
     'AI Trainee',
@@ -129,7 +141,7 @@ const departmentDesignations = {
     'Director of Sales',
     'VP of Sales'
   ]
-};
+}
 
 const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
   departments,
@@ -418,9 +430,9 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
               <Avatar className="w-24 h-24 border-2 border-gray-200">
                 <AvatarImage src={formData.profileImage} />
                 <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-2xl">
-                  {formData.name ? (
+                  {formData.name ? 
                     formData.name.split(' ').map(n => n[0]).join('')
-                  ) : (
+                   : (
                     <Camera className="w-8 h-8" />
                   )}
                 </AvatarFallback>
@@ -538,7 +550,7 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
                   >
                     <Calendar className="mr-2 h-4 w-4" />
                     {formData.joiningDate ? (
-                      format(formData.joiningDate, "PPP")
+                     format(formData.joiningDate, "PPP")
                     ) : (
                       <span>Pick a date</span>
                     )}
@@ -717,7 +729,7 @@ const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({
               }
             >
               {loading ? (
-                <>
+               <>
                   <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>

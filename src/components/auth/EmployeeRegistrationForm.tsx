@@ -37,6 +37,7 @@ const EmployeeRegistrationForm: React.FC<EmployeeRegistrationFormProps> = ({ onB
     'Software Development',
     'Digital Marketing', 
     'Sales',
+    'Cyber Security',
     'Product Designing',
     'Web Development',
     'Graphic Designing',

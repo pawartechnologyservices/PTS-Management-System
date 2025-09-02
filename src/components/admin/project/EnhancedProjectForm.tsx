@@ -84,7 +84,7 @@ const EnhancedProjectForm: React.FC<EnhancedProjectFormProps> = ({
     specificDepartment: ''
   });
 
-  const departments = ['Software Development', 'Digital Marketing', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', ' Artificial Intelligence'];
+  const departments = ['Software Development', 'Digital Marketing','Cyber Security', 'Sales', 'Product Designing', 'Web Development', 'Graphic Designing', ' Artificial Intelligence'];
 
   useEffect(() => {
     if (!user) return;

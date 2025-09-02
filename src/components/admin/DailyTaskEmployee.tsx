@@ -68,6 +68,7 @@ const DailyTaskEmployee: React.FC = () => {
   const departments = [
     'Software Development',
     'Digital Marketing',
+    'Cyber Security',
     'Sales',
     'Product Designing',
     'Web Development',

@@ -30,6 +30,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onBack }) => {
     'Software Development',
     'Digital Marketing',
     'Sales',
+    'Cyber Security',
     'Product Designing',
     'Web Development',
     'Graphic Designing',
